@@ -1,0 +1,16 @@
+# clippy.toml — shared clippy configuration for ostara-labs Rust repos
+# This file is copied to the repo root by devtools install.sh
+# Docs: https://doc.rust-lang.org/clippy/configuration.html
+
+# Warn on functions with too many arguments (rust-style.md § smell 2)
+too-many-arguments-threshold = 3
+
+# Warn on large enum variants (avoid stack overflow)
+enum-variant-size-threshold = 200
+
+# Warn on functions with too many lines (rust-style.md § smell 1 — 250 LOC)
+# Note: clippy's single-char-function-threshold is for code golf; we use this instead
+too-many-lines-threshold = 250
+
+# Prefer iter() over into_iter() for arrays (Rust 2021 edition)
+msrv = "1.70"

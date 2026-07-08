@@ -1,0 +1,65 @@
+# ts-ci.yml — reusable CI workflow for TypeScript repos
+# Used by: uses: ostara-labs/devtools/.github/workflows/ts-ci.yml@v1
+#
+# Inputs:
+#   package-manager: (string, default "bun")  — "bun" or "pnpm"
+#   run-tsc:         (bool, default true)     — run tsc --noEmit
+
+name: TypeScript CI
+
+on:
+  workflow_call:
+    inputs:
+      package-manager:
+        description: 'Package manager: "bun" or "pnpm"'
+        type: string
+        default: 'bun'
+      run-tsc:
+        description: 'Run tsc --noEmit (type check)'
+        type: boolean
+        default: true
+
+jobs:
+  lint:
+    name: Lint (biome + tsc)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Bun
+        if: inputs.package-manager == 'bun'
+        uses: oven-sh/setup-bun@v2
+
+      - name: Set up pnpm
+        if: inputs.package-manager == 'pnpm'
+        uses: pnpm/action-setup@v4
+
+      - name: Install deps
+        run: ${{ inputs.package-manager == 'bun' && 'bun install' || 'pnpm install' }}
+
+      - name: biome check
+        run: ${{ inputs.package-manager == 'bun' && 'bunx biome check' || 'pnpm exec biome check' }}
+
+      - name: tsc --noEmit
+        if: inputs.run-tsc
+        run: ${{ inputs.package-manager == 'bun' && 'bunx tsc --noEmit' || 'pnpm exec tsc --noEmit' }}
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Bun
+        if: inputs.package-manager == 'bun'
+        uses: oven-sh/setup-bun@v2
+
+      - name: Set up pnpm
+        if: inputs.package-manager == 'pnpm'
+        uses: pnpm/action-setup@v4
+
+      - name: Install deps
+        run: ${{ inputs.package-manager == 'bun' && 'bun install' || 'pnpm install' }}
+
+      - name: Run tests
+        run: ${{ inputs.package-manager == 'bun' && 'bun test' || 'pnpm test' }}

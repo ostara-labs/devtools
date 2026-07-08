@@ -1,0 +1,45 @@
+# Makefile.rust — standard targets for Rust projects
+# Include from your repo's Makefile:
+#   include .devtools/makefiles/Makefile.rust
+#
+# Requires: cargo, cargo-nextest (recommended), cargo-clippy
+
+.PHONY: lint test build ci format clean miri check
+
+include $(dir $(lastword $(MAKEFILE_LIST)))Makefile.common
+
+lint: ## Run cargo fmt --check + cargo clippy -D warnings
+	cargo fmt --all -- --check
+	cargo clippy --all-targets --all-features -- -D warnings
+
+test: ## Run cargo nextest (or cargo test as fallback)
+	@if command -v cargo-nextest >/dev/null 2>&1; then \
+		cargo nextest run; \
+	else \
+		echo "Tip: install cargo-nextest for faster, better test output"; \
+		cargo test; \
+	fi
+
+build: ## Build the project in release mode
+	cargo build --release
+
+ci: lint test ## Run full CI checks locally (lint + test)
+
+format: ## Auto-format code with cargo fmt
+	cargo fmt --all
+
+check: ## Fast type check (cargo check)
+	cargo check --all-targets
+
+miri: ## Run cargo +nightly miri (UB gate — requires nightly toolchain)
+	@if rustup toolchain list 2>/dev/null | grep -q nightly; then \
+		cargo +nightly miri nextest run; \
+	else \
+		echo "Nightly toolchain not installed. Install with: rustup toolchain install nightly"; \
+		exit 1; \
+	fi
+
+clean: ## Clean build artifacts
+	cargo clean
+
+## Repo-specific targets can be added below this line in your Makefile

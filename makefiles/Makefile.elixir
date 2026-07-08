@@ -1,0 +1,34 @@
+# Makefile.elixir — standard targets for Elixir/Phoenix projects
+# Include from your repo's Makefile:
+#   include .devtools/makefiles/Makefile.elixir
+#
+# Requires: elixir, mix, credo (mix archive.install hex credo)
+
+.PHONY: lint test build ci format clean deps
+
+include $(dir $(lastword $(MAKEFILE_LIST)))Makefile.common
+
+lint: ## Run mix format --check + mix credo --strict
+	mix format --check-formatted
+	mix credo --strict
+
+test: ## Run mix test
+	mix test
+
+build: ## Build a production release
+	mix deps.get --only prod
+	MIX_ENV=prod mix release
+
+ci: lint test ## Run full CI checks locally (lint + test)
+
+format: ## Auto-format code with mix format
+	mix format
+
+deps: ## Fetch and compile dependencies
+	mix deps.get
+	mix deps.compile
+
+clean: ## Clean build artifacts
+	mix clean --deps
+
+## Repo-specific targets can be added below this line in your Makefile

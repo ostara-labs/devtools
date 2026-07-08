@@ -1,0 +1,32 @@
+# trust-boundary-protect.yml — protects the devtools repo itself
+# This workflow enforces that ALL PRs to ostara-labs/devtools require human review.
+# The devtools repo is trust-boundary by definition — it contains the enforcement
+# mechanisms for all other repos.
+#
+# This workflow SHOULD be a required check for the main branch.
+
+name: Trust Boundary Protection
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  enforce-human-review:
+    name: Enforce human review (devtools is trust-boundary)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Apply requires-human-review label
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          gh pr edit "$PR_NUMBER" --add-label "requires-human-review" \
+            --repo "${{ github.repository }}"
+          gh pr comment "$PR_NUMBER" \
+            --repo "${{ github.repository }}" \
+            --body "⚠️ **ostara-labs/devtools is a trust-boundary repository.** ALL changes require human review before merge. The agent MUST NOT auto-merge PRs to this repo — changes here affect enforcement across ALL repos in the organization."

@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# commit-msg hook — enforce commit message format
+#
+# Format: <type>: <scope> — <description>
+# Or:     <type>: <description>
+#
+# Allowed types: feat, fix, docs, refactor, test, chore, ci, build, perf, style, plan, revert
+#
+# Exit 0 = pass, exit 1 = block commit.
+
+set -euo pipefail
+
+COMMIT_MSG_FILE="$1"
+COMMIT_MSG=$(cat "$COMMIT_MSG_FILE")
+
+ALLOWED_TYPES='feat|fix|docs|refactor|test|chore|ci|build|perf|style|plan|revert'
+PATTERN="^(${ALLOWED_TYPES}): .+"
+
+# Skip merge, revert, fixup, autosquash
+if echo "$COMMIT_MSG" | head -1 | grep -qE '^(Merge |Revert |fixup!|squash!)'; then
+  exit 0
+fi
+
+# Skip automated commits
+if echo "$COMMIT_MSG" | head -1 | grep -qE '^chore\(auto\):'; then
+  exit 0
+fi
+
+if [ -t 1 ]; then
+  RED='\033[0;31m'; GREEN='\033[0;32m'; NC='\033[0m'
+else
+  RED=''; GREEN=''; NC=''
+fi
+
+FIRST_LINE=$(echo "$COMMIT_MSG" | head -1)
+
+if echo "$FIRST_LINE" | grep -qE "$PATTERN"; then
+  LENGTH=${#FIRST_LINE}
+  if [ "$LENGTH" -gt 100 ]; then
+    echo -e "${RED}[commit-msg] FAIL:${NC} Subject line is ${LENGTH} chars (max 100)."
+    echo -e "${RED}[commit-msg]${NC} Subject: $FIRST_LINE"
+    exit 1
+  fi
+  echo -e "${GREEN}[commit-msg]${NC} Format OK."
+  exit 0
+else
+  echo -e "${RED}[commit-msg] FAIL:${NC} Commit message does not match required format."
+  echo ""
+  echo "  Expected: <type>: <scope> — <description>"
+  echo "  Or:       <type>: <description>"
+  echo ""
+  echo "  Allowed types: feat, fix, docs, refactor, test, chore, ci, build, perf, style, plan, revert"
+  echo ""
+  echo "  Got: $FIRST_LINE"
+  echo ""
+  echo "  Examples:"
+  echo "    feat: budget tracker — 3-account tracking with Euros newtype"
+  echo "    fix: guardrails — hash mismatch now halts loop correctly"
+  echo "    docs: ADR-002 — why we chose sqlx over diesel"
+  echo "    plan: wave-2 (agent core) — update manager in-process"
+  exit 1
+fi

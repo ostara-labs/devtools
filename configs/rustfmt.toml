@@ -1,0 +1,10 @@
+# rustfmt.toml — shared rustfmt configuration for ostara-labs Rust repos
+# This file is copied to the repo root by devtools install.sh
+# Docs: https://rust-lang.github.io/rustfmt/
+
+edition = "2021"
+max_width = 100
+use_field_init_shorthand = true
+use_try_shorthand = true
+imports_granularity = "Crate"
+group_imports = "StdExternalCrate"

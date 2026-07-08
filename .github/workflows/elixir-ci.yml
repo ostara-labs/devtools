@@ -1,0 +1,84 @@
+# elixir-ci.yml — reusable CI workflow for Elixir/Phoenix repos
+# Used by: uses: ostara-labs/devtools/.github/workflows/elixir-ci.yml@v1
+#
+# Inputs:
+#   elixir-version: (string, default "1.17") — Elixir version
+#   otp-version:    (string, default "27")   — Erlang/OTP version
+#   run-credo:      (bool, default true)     — run mix credo
+
+name: Elixir CI
+
+on:
+  workflow_call:
+    inputs:
+      elixir-version:
+        description: 'Elixir version'
+        type: string
+        default: '1.17'
+      otp-version:
+        description: 'Erlang/OTP version'
+        type: string
+        default: '27'
+      run-credo:
+        description: 'Run mix credo --strict'
+        type: boolean
+        default: true
+
+env:
+  MIX_ENV: test
+
+jobs:
+  lint:
+    name: Lint (format + credo)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: ${{ inputs.elixir-version }}
+          otp-version: ${{ inputs.otp-version }}
+
+      - name: Cache deps
+        uses: actions/cache@v4
+        with:
+          path: deps
+          key: deps-${{ runner.os }}-${{ inputs.elixir-version }}-${{ hashFiles('mix.lock') }}
+
+      - name: Install deps
+        run: mix deps.get
+
+      - name: mix format --check-formatted
+        run: mix format --check-formatted
+
+      - name: mix credo --strict
+        if: inputs.run-credo
+        run: mix credo --strict
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: ${{ inputs.elixir-version }}
+          otp-version: ${{ inputs.otp-version }}
+
+      - name: Cache deps
+        uses: actions/cache@v4
+        with:
+          path: deps
+          key: deps-${{ runner.os }}-${{ inputs.elixir-version }}-${{ hashFiles('mix.lock') }}
+
+      - name: Install deps
+        run: mix deps.get
+
+      - name: Compile
+        run: mix compile --warnings-as-errors
+
+      - name: mix test
+        run: mix test

@@ -1,0 +1,91 @@
+# rust-ci.yml — reusable CI workflow for Rust repos
+# Used by: uses: ostara-labs/devtools/.github/workflows/rust-ci.yml@v1
+#
+# Inputs:
+#   run-miri:    (bool, default false) — run cargo +nightly miri
+#   run-fmt:     (bool, default true)  — run cargo fmt --check
+#   cache:       (bool, default true)  — enable cargo cache
+#
+# Secrets:
+#   (none required — uses GITHUB_TOKEN automatically)
+
+name: Rust CI
+
+on:
+  workflow_call:
+    inputs:
+      run-miri:
+        description: 'Run cargo +nightly miri (UB gate for unsafe code)'
+        type: boolean
+        default: false
+      run-fmt:
+        description: 'Run cargo fmt --check'
+        type: boolean
+        default: true
+      cache:
+        description: 'Enable cargo cache'
+        type: boolean
+        default: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: '-D warnings'
+
+jobs:
+  lint:
+    name: Lint (fmt + clippy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache cargo
+        if: inputs.cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: cargo fmt --check
+        if: inputs.run-fmt
+        run: cargo fmt --all -- --check
+
+      - name: cargo clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-nextest
+        run: cargo install cargo-nextest --locked || true
+
+      - name: Cache cargo
+        if: inputs.cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: cargo nextest run
+        run: cargo nextest run --all-features
+
+  miri:
+    name: Miri (UB gate)
+    runs-on: ubuntu-latest
+    if: inputs.run-miri
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri
+
+      - name: cargo +nightly miri
+        run: cargo +nightly miri nextest run
+        env:
+          MIRIFLAGS: '-Zmiri-strict-provenance -Zmiri-symbolic-alignment-check'

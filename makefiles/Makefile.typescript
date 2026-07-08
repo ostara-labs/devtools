@@ -1,0 +1,39 @@
+# Makefile.typescript — standard targets for TypeScript projects
+# Include from your repo's Makefile:
+#   include .devtools/makefiles/Makefile.typescript
+#
+# Requires: bun (recommended) or node + pnpm, biome (for lint/format)
+
+.PHONY: lint test build ci format clean check deps
+
+include $(dir $(lastword $(MAKEFILE_LIST)))Makefile.common
+
+lint: ## Run biome check + tsc --noEmit
+	bunx biome check
+	bunx tsc --noEmit
+
+test: ## Run bun test (or vitest as fallback)
+	@if [ -f "vitest.config.ts" ] || [ -f "vitest.config.js" ]; then \
+		bunx vitest run; \
+	else \
+		bun test; \
+	fi
+
+build: ## Build the project
+	bun run build
+
+ci: lint test ## Run full CI checks locally (lint + test)
+
+format: ## Auto-format code with biome
+	bunx biome format --write
+
+check: ## Fast type check (tsc --noEmit)
+	bunx tsc --noEmit
+
+deps: ## Install dependencies
+	bun install
+
+clean: ## Clean build artifacts
+	rm -rf dist node_modules/.cache
+
+## Repo-specific targets can be added below this line in your Makefile

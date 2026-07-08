@@ -1,0 +1,20 @@
+# Makefile.common — shared targets included by all language Makefiles
+# This file is included by Makefile.rust, Makefile.elixir, Makefile.typescript
+# Do NOT use directly — include via the language-specific file.
+
+.PHONY: help clean devtools-update
+
+help: ## Show available targets
+	@echo "Available targets:"
+	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+
+clean: ## Clean build artifacts (language-specific implementation provided by includer)
+	@echo "clean target must be defined by the language-specific Makefile"
+
+devtools-update: ## Update devtools submodule to latest pinned version
+	@if [ -d ".devtools" ]; then \
+		cd .devtools && git fetch origin && git checkout $$(git describe --tags `git rev-list --tags --max-count=1`) && cd .. && \
+		echo "devtools updated to $$(cd .devtools && git describe --tags)"; \
+	else \
+		echo "No .devtools submodule found. Run: git submodule add https://github.com/ostara-labs/devtools .devtools"; \
+	fi
