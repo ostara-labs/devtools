@@ -1,0 +1,15 @@
+name: devtools-rulesets
+description: GitHub Organization Rulesets for ostara-labs — server-side enforcement
+runtime: nodejs
+config:
+  github:appAuth.id:
+    description: "GitHub App ID (numeric, from App settings page)"
+    secret: true
+  github:appAuth.installationId:
+    description: "GitHub App Installation ID (from org settings/installations URL)"
+    secret: true
+  github:appAuth.pemFile:
+    description: "GitHub App private key PEM content (from Generate private key)"
+    secret: true
+  github:owner:
+    description: "GitHub org owner (ostara-labs) — mandatory with appAuth"

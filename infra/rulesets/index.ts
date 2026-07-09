@@ -16,8 +16,28 @@
 import * as github from "@pulumi/github";
 import * as pulumi from "@pulumi/pulumi";
 
+// Authentication via GitHub App (not PAT).
+// The App ID, Installation ID, and PEM private key are stored as Pulumi secrets:
+//   pulumi config set github:appAuth.id <APP_ID> --secret
+//   pulumi config set github:appAuth.installationId <INSTALLATION_ID> --secret
+//   pulumi config set github:appAuth.pemFile <PEM_CONTENT> --secret
+//   pulumi config set github:owner ostara-labs
+//
+// Why GitHub App instead of PAT:
+//   - No expiration (PAT expires every 90 days)
+//   - Scoped permissions (only org:administration write)
+//   - Auditable in GitHub audit logs (actions appear as "ostara-labs-pulumi", not "ostara-labs")
+//   - The agent cannot steal the token (installation token is generated per-execution)
+//
+// The GitHub App must be installed on the ostara-labs org with:
+//   Organization permissions → Administration → Read and write
+//
+// No token variable needed — the Pulumi GitHub provider reads appAuth config
+// automatically and generates an installation token per execution.
+
 const config = new pulumi.Config();
-const ghToken = config.requireSecret("github:token");
+// Provider config is read automatically by the @pulumi/github provider.
+// No explicit token retrieval needed here — the provider handles it.
 
 // --- Org-level branch protection (all repos) ---
 const branchProtection = new github.OrganizationRuleset("core-branch-protection", {
