@@ -88,7 +88,11 @@ check_file_size() {
   local filepath="$REPO_ROOT/$file"
   [ ! -f "$filepath" ] && return
   local pure_loc
-  pure_loc=$(awk '!/^[[:space:]]*$/ && !/^[[:space:]]*'"$comment_prefix"'/' "$filepath" | wc -l)
+  # Count lines that are neither blank nor comments.
+  # Uses grep -v (invert) instead of awk to avoid delimiter conflicts:
+  # awk's regex delimiter is /, so comment_prefix="//" (Rust) breaks awk
+  # with "unexpected newline". grep -E treats / as a literal character.
+  pure_loc=$(grep -cvE "^[[:space:]]*$|^[[:space:]]*${comment_prefix}" "$filepath" || true)
   if [ "$pure_loc" -gt 250 ]; then
     fail "$file is ${pure_loc} pure LOC (max 250). Split by responsibility or mark with SIZE_OK."
   fi
