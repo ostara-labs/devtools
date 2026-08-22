@@ -66,6 +66,12 @@ SECRET_PATTERNS=(
 
 for file in $STAGED_FILES; do
   if file "$REPO_ROOT/$file" 2>/dev/null | grep -qi 'text\|json\|yaml\|xml\|empty'; then
+    # Skip test files — they contain fake secrets to test the sanitizer
+    # (e.g., ghp_1234... in sanitizer_tests.rs). Real secrets in test files
+    # are caught by code review (trust-boundary PRs require HITL).
+    if [[ "$file" == *"test.rs" || "$file" == *"tests.rs" || "$file" == "tests/"* || "$file" == *"/test.rs" || "$file" == *"/tests.rs" ]]; then
+      continue
+    fi
     for pattern in "${SECRET_PATTERNS[@]}"; do
       if grep -nE "$pattern" "$REPO_ROOT/$file" 2>/dev/null; then
         fail "Potential secret detected in $file (pattern: $pattern)"
@@ -151,7 +157,11 @@ if [ "$HAS_RUST" = true ]; then
       [ ! -f "$filepath" ] && continue
 
       is_test_file=false
-      if [[ "$file" == *"test.rs" || "$file" == "tests/"* || "$file" == *"/test.rs" ]]; then
+      # Test-file detection must match the secrets-skip block in check 1:
+      # repo-wide convention is plural *_tests.rs (declared via #[path = "..."]),
+      # so *"tests.rs" is REQUIRED here or every *_tests.rs file is treated as
+      # production code and .expect()/.unwrap() in tests are false-flagged.
+      if [[ "$file" == *"test.rs" || "$file" == *"tests.rs" || "$file" == "tests/"* || "$file" == *"/test.rs" || "$file" == *"/tests.rs" ]]; then
         is_test_file=true
       fi
 
