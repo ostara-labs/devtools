@@ -1,0 +1,90 @@
+# =============================================================================
+# Stack domotique : Home Assistant + Mosquitto + Zigbee2MQTT + Tailscale.
+#
+# Le fichier .env racine est lu automatiquement par docker compose
+# (interpolation ${VAR}). Il est généré depuis .env.example par
+# scripts/install.sh (DONGLE_PATH y est écrit à la phase 3).
+# =============================================================================
+
+services:
+  # --- Home Assistant -------------------------------------------------------
+  # network_mode: host : HA partage le réseau de l'hôte et expose son interface
+  # sur le port 8123. Il joint Mosquitto via le loopback de l'hôte
+  # (127.0.0.1:1883), car Mosquitto n'est publié que sur 127.0.0.1 (REQ-INS-005).
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:stable
+    container_name: homeassistant
+    network_mode: host
+    volumes:
+      - ./config/homeassistant:/config
+    environment:
+      - TZ=${TZ}
+    restart: unless-stopped
+
+  # --- Mosquitto (broker MQTT) ----------------------------------------------
+  # REQ-INS-005 : Mosquitto n'est JAMAIS exposé au réseau local. Le port
+  # mapping "127.0.0.1:1883:1883" ne publie le port que sur le loopback de
+  # l'hôte.
+  #
+  # Câblage :
+  #   - Zigbee2MQTT (réseau compose interne) joint Mosquitto par le nom de
+  #     service "mosquitto" (le listener écoute sur toutes les interfaces du
+  #     conteneur).
+  #   - Home Assistant (network_mode host) joint Mosquitto via 127.0.0.1:1883,
+  #     grâce à la publication loopback.
+  # Aucun autre appareil du LAN ne peut joindre le broker.
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: mosquitto
+    ports:
+      - "127.0.0.1:1883:1883"
+    volumes:
+      - ./config/mosquitto:/mosquitto/config
+      - ./secrets/mosquitto/passwd:/mosquitto/config/passwd
+      - mosquitto_data:/mosquitto/data
+    restart: unless-stopped
+
+  # --- Zigbee2MQTT (pont Zigbee) --------------------------------------------
+  # Réseau compose interne : z2m joint Mosquitto par le nom de service.
+  # L'interface web (8080) est exposée sur le LAN pour l'appairage des
+  # appareils. Le dongle est mappé sur le chemin FIXE /dev/zigbee dans le
+  # conteneur (REQ-INS-007).
+  zigbee2mqtt:
+    image: koenkk/zigbee2mqtt
+    container_name: zigbee2mqtt
+    ports:
+      - "8080:8080"
+    devices:
+      - "${DONGLE_PATH}:/dev/zigbee"
+    volumes:
+      - ./config/zigbee2mqtt:/app/data
+    environment:
+      - TZ=${TZ}
+    depends_on:
+      - mosquitto
+    restart: unless-stopped
+
+  # --- Tailscale (accès distant chiffré) ------------------------------------
+  # network_mode: host : le plus simple pour joindre Home Assistant (port 8123)
+  # et le reste de la stack depuis le réseau Tailscale, sans aucune exposition
+  # au LAN. L'accès distant passe exclusivement par Tailscale (jamais de port
+  # forwarding routeur).
+  tailscale:
+    image: tailscale/tailscale
+    container_name: tailscale
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    volumes:
+      - ./secrets/tailscale:/var/lib/tailscale
+    environment:
+      - TS_AUTHKEY=${TAILSCALE_AUTHKEY}
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_HOSTNAME=${HOSTNAME}
+    restart: unless-stopped
+
+volumes:
+  # Persistance des données Mosquitto (sessions, messages retenus).
+  mosquitto_data:

@@ -4,8 +4,10 @@
 !*.env.example
 secrets/
 
-# Configs générées à l'installation (templates dans repo, instances générées non suivies)
-config/homeassistant/secrets.yaml
+# Configs générées à l'installation (templates dans repo, instances générées non suivies).
+# Toute la config/ est ignorée : les configs rendues contiennent le mot de passe
+# MQTT injecté (REQ-INS-004 — aucun secret dans git).
+config/
 
 # Backups locaux
 backups/

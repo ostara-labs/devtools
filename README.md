@@ -19,4 +19,4 @@ Une machine dédiée (mini PC Intel N100), Debian minimal, puis **une seule comm
 
 ## Statut
 
-🚧 En spécification. Prochaine étape : implémentation de `scripts/install.sh` conforme à `spec-installation.md`.
+✅ Spécifications v0.1.0 et implémentation initiale : `scripts/install.sh`, `docker-compose.yml`, templates de config. Validation réelle à effectuer sur le matériel (mini PC N100 + ZBT-2).

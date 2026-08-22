@@ -1,0 +1,23 @@
+# =============================================================================
+# Configuration Home Assistant minimale — rendue par scripts/install.sh depuis
+# ce template.
+#
+# Le fichier généré est config/homeassistant/configuration.yaml (non suivi par
+# git). Les placeholders {{...}} sont remplacés à l'installation.
+# =============================================================================
+
+# Charge la configuration par défaut (découverte automatique, intégrations de
+# base, journalisation, etc.).
+default_config:
+
+# Intégration MQTT : Home Assistant est en network_mode host, il joint donc le
+# broker Mosquitto publié sur le loopback de l'hôte (127.0.0.1:1883).
+# Les identifiants sont requis car Mosquitto interdit les clients anonymes.
+mqtt:
+  broker: 127.0.0.1
+  port: 1883
+  username: {{MQTT_USER}}
+  password: {{MQTT_PASSWORD}}
+
+# Interface web (port 8123).
+frontend:

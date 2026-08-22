@@ -1,0 +1,37 @@
+# =============================================================================
+# Configuration Zigbee2MQTT — rendue par scripts/install.sh depuis ce template.
+#
+# Le fichier généré est config/zigbee2mqtt/configuration.yaml (non suivi par
+# git). Les placeholders {{...}} sont remplacés à l'installation.
+# =============================================================================
+
+# Intégration Home Assistant (découverte automatique des appareils).
+homeassistant:
+  enabled: true
+
+# Autorisation d'appairage : désactivée par défaut (activée via l'interface
+# web ou l'intégration HA quand on veut associer un appareil).
+permit_join: false
+
+# Connexion au broker Mosquitto (réseau compose interne, nom de service).
+mqtt:
+  base_topic: zigbee2mqtt
+  server: mqtt://mosquitto:1883
+  user: {{MQTT_USER}}
+  password: {{MQTT_PASSWORD}}
+
+# Dongle Zigbee : chemin FIXE dans le conteneur (le device est mappé par
+# docker compose depuis DONGLE_PATH, voir REQ-INS-007).
+serial:
+  port: /dev/zigbee
+
+# Paramètres avancés du réseau Zigbee.
+advanced:
+  channel: {{ZIGBEE_CHANNEL}}
+  # Le fuseau horaire est fourni par la variable d'environnement TZ du
+  # conteneur (définie dans docker-compose.yml), pas par un réglage YAML.
+
+# Interface web d'appairage (port 8080).
+frontend:
+  enabled: true
+  port: 8080
