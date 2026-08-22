@@ -147,6 +147,24 @@ for file in $STAGED_FILES; do
   done <<< "$TB_PATTERNS"
 done
 
+# Flag .unwrap()/.expect() occurrences that sit outside the file's first
+# #[cfg(test)] block. Test files never reach this (is_test_file skips them).
+check_rust_cmd() {
+  local cmd="$1" lines="$2" file="$3" filepath="$4"
+  [ -z "$lines" ] && return 0
+  local cfg_test_count cfg_test_line before_cfg
+  cfg_test_count=$(grep -c '#\[cfg(test)\]' "$filepath" || true)
+  if [ "$cfg_test_count" -eq 0 ]; then
+    fail "$file contains .$cmd() outside tests. Use ? with context.\n$lines"
+  else
+    cfg_test_line=$(grep -n '#\[cfg(test)\]' "$filepath" | head -1 | cut -d: -f1)
+    before_cfg=$(echo "$lines" | awk -F: -v cfg_line="$cfg_test_line" '$1 < cfg_line {print}')
+    if [ -n "$before_cfg" ]; then
+      fail "$file contains .$cmd() outside #[cfg(test)]. Use ? with context.\n$before_cfg"
+    fi
+  fi
+}
+
 # --- 5-8. Rust-specific checks ---
 if [ "$HAS_RUST" = true ]; then
   RUST_FILES=$(echo "$STAGED_FILES" | grep '\.rs$' || true)
@@ -166,26 +184,15 @@ if [ "$HAS_RUST" = true ]; then
       fi
 
       # 5. unwrap()/expect() outside tests
+      # Pass cmd and lines as SEPARATE arguments: prefixing a label onto
+      # multi-line grep output ("expect:142:a\n153:b") and re-splitting it with
+      # `cut -d: -f2-` strips the "NNN:" number from every line after the
+      # first, silently breaking the cfg(test) position check below.
       if [ "$is_test_file" = false ]; then
         unwrap_lines=$(grep -n '\.unwrap()' "$filepath" 2>/dev/null || true)
         expect_lines=$(grep -n '\.expect(' "$filepath" 2>/dev/null || true)
-
-        for cmd_lines in "unwrap:$unwrap_lines" "expect:$expect_lines"; do
-          cmd=$(echo "$cmd_lines" | cut -d: -f1)
-          lines=$(echo "$cmd_lines" | cut -d: -f2-)
-          [ -z "$lines" ] && continue
-
-          cfg_test_count=$(grep -c '#\[cfg(test)\]' "$filepath" || true)
-          if [ "$cfg_test_count" -eq 0 ]; then
-            fail "$file contains .$cmd() outside tests. Use ? with context.\n$lines"
-          else
-            cfg_test_line=$(grep -n '#\[cfg(test)\]' "$filepath" | head -1 | cut -d: -f1)
-            before_cfg=$(echo "$lines" | awk -F: -v cfg_line="$cfg_test_line" '$1 < cfg_line {print}')
-            if [ -n "$before_cfg" ]; then
-              fail "$file contains .$cmd() outside #[cfg(test)]. Use ? with context.\n$before_cfg"
-            fi
-          fi
-        done
+        check_rust_cmd unwrap "$unwrap_lines" "$file" "$filepath"
+        check_rust_cmd expect "$expect_lines" "$file" "$filepath"
       fi
 
       # 6. println!/eprintln! outside main.rs
