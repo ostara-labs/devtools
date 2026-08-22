@@ -1,0 +1,16 @@
+# Secrets et configuration locale réelle
+.env
+*.env
+!*.env.example
+secrets/
+
+# Configs générées à l'installation (templates dans repo, instances générées non suivies)
+config/homeassistant/secrets.yaml
+
+# Backups locaux
+backups/
+*.tar.gz
+
+# Divers
+.DS_Store
+Thumbs.db
