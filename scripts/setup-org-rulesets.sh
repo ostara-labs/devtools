@@ -31,7 +31,7 @@ PAYLOAD="$(cat <<JSON
   "enforcement": "active",
   "conditions": {
     "ref_name": { "include": ["~DEFAULT_BRANCH"], "exclude": [] },
-    "repository_name": { "include": ["~ALL"], "exclude": ${excludes_json}, "protected": true }
+    "repository_name": { "include": ["~ALL"], "exclude": ${excludes_json} }
   },
   "bypass_actors": [],
   "rules": [
