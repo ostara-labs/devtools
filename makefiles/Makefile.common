@@ -9,10 +9,11 @@
 # by the language files you included. Absent stacks print "[target] skipped"
 # and never fail — so aggregates may reference every suffix unconditionally.
 
-# Overridable shell configuration (last definition wins in GNU Make:
-# set these in your Makefile AFTER the includes to customize).
-SHELL      ?= /bin/bash
-.SHELLFLAGS ?= -eu -o pipefail -c
+# Shell configuration. NOTE: `SHELL ?=` would be a silent no-op — GNU make
+# always pre-defines SHELL (/bin/sh), so ?= never fires. Use := here;
+# override AFTER the includes with := if a consumer needs something else.
+SHELL      := /bin/bash
+.SHELLFLAGS := -eu -o pipefail -c
 .ONESHELL:
 
 .PHONY: help devtools-update
