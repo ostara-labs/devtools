@@ -66,6 +66,12 @@ SECRET_PATTERNS=(
 
 for file in $STAGED_FILES; do
   if file "$REPO_ROOT/$file" 2>/dev/null | grep -qi 'text\|json\|yaml\|xml\|empty'; then
+    # Skip test files — they contain fake secrets to test the sanitizer
+    # (e.g., ghp_1234... in sanitizer_tests.rs). Real secrets in test files
+    # are caught by code review (trust-boundary PRs require HITL).
+    if [[ "$file" == *"test.rs" || "$file" == *"tests.rs" || "$file" == "tests/"* || "$file" == *"/test.rs" || "$file" == *"/tests.rs" ]]; then
+      continue
+    fi
     for pattern in "${SECRET_PATTERNS[@]}"; do
       if grep -nE "$pattern" "$REPO_ROOT/$file" 2>/dev/null; then
         fail "Potential secret detected in $file (pattern: $pattern)"
@@ -88,7 +94,11 @@ check_file_size() {
   local filepath="$REPO_ROOT/$file"
   [ ! -f "$filepath" ] && return
   local pure_loc
-  pure_loc=$(awk '!/^[[:space:]]*$/ && !/^[[:space:]]*'"$comment_prefix"'/' "$filepath" | wc -l)
+  # Count lines that are neither blank nor comments.
+  # Uses grep -v (invert) instead of awk to avoid delimiter conflicts:
+  # awk's regex delimiter is /, so comment_prefix="//" (Rust) breaks awk
+  # with "unexpected newline". grep -E treats / as a literal character.
+  pure_loc=$(grep -cvE "^[[:space:]]*$|^[[:space:]]*${comment_prefix}" "$filepath" || true)
   if [ "$pure_loc" -gt 250 ]; then
     fail "$file is ${pure_loc} pure LOC (max 250). Split by responsibility or mark with SIZE_OK."
   fi
@@ -137,6 +147,24 @@ for file in $STAGED_FILES; do
   done <<< "$TB_PATTERNS"
 done
 
+# Flag .unwrap()/.expect() occurrences that sit outside the file's first
+# #[cfg(test)] block. Test files never reach this (is_test_file skips them).
+check_rust_cmd() {
+  local cmd="$1" lines="$2" file="$3" filepath="$4"
+  [ -z "$lines" ] && return 0
+  local cfg_test_count cfg_test_line before_cfg
+  cfg_test_count=$(grep -c '#\[cfg(test)\]' "$filepath" || true)
+  if [ "$cfg_test_count" -eq 0 ]; then
+    fail "$file contains .$cmd() outside tests. Use ? with context.\n$lines"
+  else
+    cfg_test_line=$(grep -n '#\[cfg(test)\]' "$filepath" | head -1 | cut -d: -f1)
+    before_cfg=$(echo "$lines" | awk -F: -v cfg_line="$cfg_test_line" '$1 < cfg_line {print}')
+    if [ -n "$before_cfg" ]; then
+      fail "$file contains .$cmd() outside #[cfg(test)]. Use ? with context.\n$before_cfg"
+    fi
+  fi
+}
+
 # --- 5-8. Rust-specific checks ---
 if [ "$HAS_RUST" = true ]; then
   RUST_FILES=$(echo "$STAGED_FILES" | grep '\.rs$' || true)
@@ -147,31 +175,24 @@ if [ "$HAS_RUST" = true ]; then
       [ ! -f "$filepath" ] && continue
 
       is_test_file=false
-      if [[ "$file" == *"test.rs" || "$file" == "tests/"* || "$file" == *"/test.rs" ]]; then
+      # Test-file detection must match the secrets-skip block in check 1:
+      # repo-wide convention is plural *_tests.rs (declared via #[path = "..."]),
+      # so *"tests.rs" is REQUIRED here or every *_tests.rs file is treated as
+      # production code and .expect()/.unwrap() in tests are false-flagged.
+      if [[ "$file" == *"test.rs" || "$file" == *"tests.rs" || "$file" == "tests/"* || "$file" == *"/test.rs" || "$file" == *"/tests.rs" ]]; then
         is_test_file=true
       fi
 
       # 5. unwrap()/expect() outside tests
+      # Pass cmd and lines as SEPARATE arguments: prefixing a label onto
+      # multi-line grep output ("expect:142:a\n153:b") and re-splitting it with
+      # `cut -d: -f2-` strips the "NNN:" number from every line after the
+      # first, silently breaking the cfg(test) position check below.
       if [ "$is_test_file" = false ]; then
         unwrap_lines=$(grep -n '\.unwrap()' "$filepath" 2>/dev/null || true)
         expect_lines=$(grep -n '\.expect(' "$filepath" 2>/dev/null || true)
-
-        for cmd_lines in "unwrap:$unwrap_lines" "expect:$expect_lines"; do
-          cmd=$(echo "$cmd_lines" | cut -d: -f1)
-          lines=$(echo "$cmd_lines" | cut -d: -f2-)
-          [ -z "$lines" ] && continue
-
-          cfg_test_count=$(grep -c '#\[cfg(test)\]' "$filepath" || true)
-          if [ "$cfg_test_count" -eq 0 ]; then
-            fail "$file contains .$cmd() outside tests. Use ? with context.\n$lines"
-          else
-            cfg_test_line=$(grep -n '#\[cfg(test)\]' "$filepath" | head -1 | cut -d: -f1)
-            before_cfg=$(echo "$lines" | awk -F: -v cfg_line="$cfg_test_line" '$1 < cfg_line {print}')
-            if [ -n "$before_cfg" ]; then
-              fail "$file contains .$cmd() outside #[cfg(test)]. Use ? with context.\n$before_cfg"
-            fi
-          fi
-        done
+        check_rust_cmd unwrap "$unwrap_lines" "$file" "$filepath"
+        check_rust_cmd expect "$expect_lines" "$file" "$filepath"
       fi
 
       # 6. println!/eprintln! outside main.rs
