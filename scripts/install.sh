@@ -14,7 +14,7 @@
 
 set -euo pipefail
 
-REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || echo "$(pwd)")"
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 DEVTOOLS_DIR=""
 
 # --- Locate devtools directory ---
@@ -75,9 +75,11 @@ EOF
       echo "[install] Makefile already includes devtools ${LANG_TARGET} targets."
     else
       # Append the include
-      echo "" >> "$MAKEFILE"
-      echo "# --- devtools standard targets ---" >> "$MAKEFILE"
-      echo "$INCLUDE_LINE" >> "$MAKEFILE"
+      {
+        echo ""
+        echo "# --- devtools standard targets ---"
+        echo "$INCLUDE_LINE"
+      } >> "$MAKEFILE"
       echo "[install] Appended devtools ${LANG_TARGET} include to existing Makefile."
     fi
   fi
@@ -108,7 +110,8 @@ fi
 echo ""
 echo "[install] Done! Available make targets:"
 if [ -f "$MAKEFILE" ]; then
-  cd "$REPO_ROOT" && make help 2>/dev/null || true
+  cd "$REPO_ROOT"
+  make help 2>/dev/null || true
 fi
 echo ""
 echo "[install] Git hooks are active. Test with: git commit --dry-run"

@@ -52,13 +52,7 @@ PAYLOAD="$(cat <<JSON
       "parameters": {
         "strict_required_status_checks_policy": false,
         "required_status_checks": [
-          { "context": "title" },
-          { "context": "workflow-lint" },
-          { "context": "rust / rust" },
-          { "context": "typescript / typescript" },
-          { "context": "elixir / elixir" },
-          { "context": "python / python" },
-          { "context": "gitleaks" }
+          { "context": "gate" }
         ]
       }
     }

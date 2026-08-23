@@ -1,0 +1,41 @@
+name: CI
+
+# The single required context for this repository ("gate"), mirroring the
+# org-wide policy: every repo proves its own health through one aggregate.
+# devtools is itself trust-boundary: ALL PRs additionally require human
+# review (see trust-boundary-protect.yml).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    name: gate
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - name: Install actionlint (checksum-verified)
+        run: |
+          version=1.7.12
+          asset="actionlint_${version}_linux_amd64.tar.gz"
+          curl -sSfL -o "$asset" "https://github.com/rhysd/actionlint/releases/download/v${version}/${asset}"
+          curl -sSfL -o checksums.txt "https://github.com/rhysd/actionlint/releases/download/v${version}/actionlint_${version}_checksums.txt"
+          grep "$asset" checksums.txt | sha256sum --check --status -
+          tar -xzf "$asset" actionlint
+
+      - name: Lint all workflow files
+        run: ./actionlint -no-color
+
+      - name: Shellcheck scripts and hooks
+        run: |
+          # .ps1 excluded: PowerShell files are not bash.
+          find scripts hooks -type f ! -name '*.ps1' -print0 | xargs -0 shellcheck -s bash
