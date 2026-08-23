@@ -1,113 +1,82 @@
-# pr-classify.yml — reusable workflow for PR trust-boundary classification
-# Used by: uses: ostara-labs/devtools/.github/workflows/pr-classify.yml@v1
-#
-# Reads .github/trust-boundary.yml from the consuming repo and classifies the PR.
-# If the PR touches any trust-boundary file → applies 'requires-human-review' label.
-# Logs the classification to .omo/evidence/pr-classifications.log (if .omo/evidence/ exists).
-#
-# This workflow MUST be added as a required check for branch protection.
-# It MUST NOT auto-merge trust-boundary PRs.
+name: Classify PR
 
-name: PR Classify
+# Labels pull requests that touch trust-boundary files (see
+# .github/trust-boundary.yml) with "requires-human-review" and posts a
+# comment listing exactly what was touched. Informational only: the actual
+# merge gate is the "main-protection" ruleset, which requires code-owner
+# approval for those paths.
 
 on:
-  workflow_call:
-    inputs:
-      trust-boundary-config:
-        description: 'Path to trust-boundary.yml (default: .github/trust-boundary.yml)'
-        type: string
-        default: '.github/trust-boundary.yml'
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
 
 jobs:
   classify:
-    name: Classify PR (trust-boundary check)
+    name: classify
     runs-on: ubuntu-latest
-    outputs:
-      is-trust-boundary: ${{ steps.classify.outputs.is-trust-boundary }}
-      touched-files: ${{ steps.classify.outputs.touched-files }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
-          fetch-depth: 0  # Need full history for diff
+          persist-credentials: false
 
-      - name: Classify PR
-        id: classify
+      - name: Detect trust-boundary changes
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CONFIG_PATH: ${{ inputs.trust-boundary-config }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.sha }}
         run: |
-          # Get list of changed files in this PR
-          if [ -n "${{ github.event.pull_request.base.sha }}" ]; then
-            CHANGED_FILES=$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}")
-          else
-            # Fallback for push events
-            CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || echo "")
-          fi
+          set -euo pipefail
 
-          # Read trust-boundary patterns
-          TB_PATTERMS=""
-          if [ -f "$CONFIG_PATH" ]; then
-            TB_PATTERMS=$(grep -E '^\s*-\s*"' "$CONFIG_PATH" | sed 's/.*"\(.*\)".*/\1/' || true)
-          else
-            # No config file → no trust-boundary files defined → all PRs are evolvable
-            echo "is-trust-boundary=false" >> "$GITHUB_OUTPUT"
-            echo "touched-files=" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
+          git fetch --quiet origin "$BASE_SHA"
+          changed="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
+          [ -n "$changed" ] || exit 0
 
-          # Check if any changed file matches a trust-boundary pattern
-          TB_HIT="false"
-          TB_FILES=""
-          for file in $CHANGED_FILES; do
-            while IFS= read -r pattern; do
-              [ -z "$pattern" ] && continue
-              if [[ "$file" == "$pattern"* ]]; then
-                TB_HIT="true"
-                TB_FILES="${TB_FILES},${file}"
-                break
+          # Idempotently ensure the label exists (fresh repos from this
+          # template do not have it yet).
+          gh label create requires-human-review \
+            --color E99695 --description "Touches trust-boundary files" \
+            --force >/dev/null 2>&1 || true
+
+          # Collect changed files matching a configured pattern.
+          hits=""
+          while IFS= read -r pattern; do
+            [ -n "$pattern" ] || continue
+            while IFS= read -r file; do
+              # Glob matching on the right-hand side is intentional: the
+              # patterns in trust-boundary.yml are shell globs.
+              # shellcheck disable=SC2053
+              if [[ "$file" == $pattern ]]; then
+                hits+="- \`$file\` (matched \`$pattern\`)"$'\n'
               fi
-            done <<< "$TB_PATTERMS"
-          done
+            done <<< "$changed"
+          done < <(sed -E 's/^[[:space:]]*-[[:space:]]*//' .github/trust-boundary.yml | grep -v '^[[:space:]]*$' | grep -v '^#')
 
-          # Remove leading comma
-          TB_FILES="${TB_FILES#,}"
+          has_label="$(gh pr view "$PR_NUMBER" --json labels --jq '[.labels[].name] | contains(["requires-human-review"])')"
 
-          echo "is-trust-boundary=$TB_HIT" >> "$GITHUB_OUTPUT"
-          echo "touched-files=$TB_FILES" >> "$GITHUB_OUTPUT"
-
-          # Log to evidence file if it exists
-          EVIDENCE_DIR=".omo/evidence"
-          if [ -d "$EVIDENCE_DIR" ] || [ -d "../.omo/evidence" ]; then
-            mkdir -p "$EVIDENCE_DIR" 2>/dev/null || true
-            echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) PR#${{ github.event.pull_request.number }} trust-boundary=$TB_HIT files=$TB_FILES" >> "$EVIDENCE_DIR/pr-classifications.log" 2>/dev/null || true
-          fi
-
-      - name: Apply requires-human-review label
-        if: steps.classify.outputs.is-trust-boundary == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          PR_NUMBER="${{ github.event.pull_request.number }}"
-          if [ -n "$PR_NUMBER" ]; then
-            gh pr edit "$PR_NUMBER" --add-label "requires-human-review" \
-              --repo "${{ github.repository }}"
-            gh pr comment "$PR_NUMBER" \
-              --repo "${{ github.repository }}" \
-              --body "⚠️ **Trust-boundary PR detected.** This PR touches files that are in the trust boundary. Human review is required before merge. The PR will not auto-merge.
-
-          Touchet files: ${{ steps.classify.outputs.touched-files }}
-
-          See: [.github/trust-boundary.yml](${{ github.server_url }}/${{ github.repository }}/blob/${{ github.event.pull_request.head.sha }}/.github/trust-boundary.yml) for the full list of trust-boundary files."
-          fi
-
-      - name: Verify trust-boundary.yml is self-protecting
-        env:
-          CONFIG_PATH: ${{ inputs.trust-boundary-config }}
-        run: |
-          # The trust-boundary config MUST list itself as a trust-boundary file
-          if [ -f "$CONFIG_PATH" ]; then
-            if ! grep -q 'trust-boundary.yml' "$CONFIG_PATH"; then
-              echo "::error::trust-boundary.yml does NOT list itself as a trust-boundary file. This is a security hole — the agent could shrink the boundary."
-              exit 1
+          if [ -n "$hits" ]; then
+            gh pr edit "$PR_NUMBER" --add-label requires-human-review >/dev/null 2>&1 || true
+            if [ "$has_label" != "true" ]; then
+              {
+                echo "## ⚠️ Trust boundary touched"
+                echo ""
+                echo "This PR modifies files protected by \`.github/trust-boundary.yml\`:"
+                echo ""
+                echo "$hits"
+                echo ""
+                echo "Human approval from a code owner (see CODEOWNERS) is **required** before merge."
+              } > body.md
+              gh pr comment "$PR_NUMBER" --body-file body.md >/dev/null
+              rm -f body.md
+            fi
+          else
+            # Not trust-boundary anymore (e.g. files reverted): clear the label.
+            if [ "$has_label" = "true" ]; then
+              gh pr edit "$PR_NUMBER" --remove-label requires-human-review >/dev/null 2>&1 || true
             fi
           fi

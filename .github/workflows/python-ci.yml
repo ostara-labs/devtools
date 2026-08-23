@@ -1,4 +1,4 @@
-name: Rust CI
+name: Python CI
 
 on:
   workflow_call:
@@ -7,7 +7,7 @@ permissions:
   contents: read
 
 jobs:
-  rust:
+  python:
     runs-on: ubuntu-24.04
     steps:
       - name: Harden runner
@@ -18,32 +18,40 @@ jobs:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
-      - name: Detect Rust stack
+      - name: Detect Python stack
         id: detect
         shell: bash
         run: |
-          if [ -f rust/Cargo.toml ]; then
+          if [ -f python/pyproject.toml ]; then
             echo "present=true" >> "$GITHUB_OUTPUT"
           else
             echo "present=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Install Rust toolchain
+      - name: Setup Python
         if: steps.detect.outputs.present == 'true'
-        uses: dtolnay/rust-toolchain@stable # trusted moving-ref exception: kept for auto-updating toolchain
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          components: clippy, rustfmt
+          python-version: "3.12"
 
-      - name: Cache cargo
+      - name: Setup uv
         if: steps.detect.outputs.present == 'true'
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
-          workspaces: rust
+          enable-cache: false # uv manages its own environment; keep it simple
+
+      - name: Sync dependencies
+        if: steps.detect.outputs.present == 'true'
+        run: uv sync --directory python
 
       - name: Lint
         if: steps.detect.outputs.present == 'true'
-        run: cd rust && cargo fmt --all -- --check && cargo clippy --all-targets --all-features -- -D warnings
+        run: uv run --directory python ruff check src tests
+
+      - name: Format check
+        if: steps.detect.outputs.present == 'true'
+        run: uv run --directory python ruff format --check src tests
 
       - name: Test
         if: steps.detect.outputs.present == 'true'
-        run: cd rust && cargo test
+        run: uv run --directory python pytest

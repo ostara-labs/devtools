@@ -1,0 +1,55 @@
+# Makefile.python — monorepo targets for the python/ stack.
+# Included by your Makefile. Every target is guarded: absent stack prints
+# "[target] skipped" and never fails.
+#
+# Overridable variables:
+#   PY_DIR ?= python
+
+PY_DIR ?= python
+
+.PHONY: deps-python format-python lint-python test-python build-python clean-python
+
+##@ Python
+
+deps-python: ## Create/refresh Python environment (uv sync)
+	@if [ ! -f $(PY_DIR)/pyproject.toml ]; then \
+		echo "[deps-python] skipped (no $(PY_DIR)/pyproject.toml)"; \
+	else \
+		cd $(PY_DIR) && uv sync; \
+	fi
+
+format-python: ## Format Python code (ruff format)
+	@if [ ! -f $(PY_DIR)/pyproject.toml ]; then \
+		echo "[format-python] skipped (no $(PY_DIR)/pyproject.toml)"; \
+	else \
+		cd $(PY_DIR) && uv run ruff format src tests; \
+	fi
+
+lint-python: ## Lint Python code (ruff check + ruff format --check)
+	@if [ ! -f $(PY_DIR)/pyproject.toml ]; then \
+		echo "[lint-python] skipped (no $(PY_DIR)/pyproject.toml)"; \
+	else \
+		cd $(PY_DIR) && uv run ruff check src tests && uv run ruff format --check src tests; \
+	fi
+
+test-python: ## Test Python code (pytest)
+	@if [ ! -f $(PY_DIR)/pyproject.toml ]; then \
+		echo "[test-python] skipped (no $(PY_DIR)/pyproject.toml)"; \
+	else \
+		cd $(PY_DIR) && uv run pytest; \
+	fi
+
+build-python: ## Build Python package (uv build)
+	@if [ ! -f $(PY_DIR)/pyproject.toml ]; then \
+		echo "[build-python] skipped (no $(PY_DIR)/pyproject.toml)"; \
+	else \
+		cd $(PY_DIR) && uv build; \
+	fi
+
+clean-python: ## Remove Python caches (pytest, ruff, __pycache__)
+	@if [ ! -f $(PY_DIR)/pyproject.toml ]; then \
+		echo "[clean-python] skipped (no $(PY_DIR)/pyproject.toml)"; \
+	else \
+		rm -rf $(PY_DIR)/.pytest_cache $(PY_DIR)/.ruff_cache; \
+		find $(PY_DIR) -type d -name __pycache__ -prune -exec rm -rf {} +; \
+	fi

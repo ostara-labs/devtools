@@ -1,19 +1,30 @@
-# Makefile.common — shared targets included by all language Makefiles
-# This file is included by Makefile.rust, Makefile.elixir, Makefile.typescript
-# Do NOT use directly — include via the language-specific file.
+# Makefile.common — shared shell configuration, help, and tooling.
+# Include ONCE at the top of your Makefile, BEFORE the language files:
+#   include .devtools/makefiles/Makefile.common
+#   include .devtools/makefiles/Makefile.rust
+#   ...
+#
+# Aggregate targets (deps/lint/test/build/format/ci/clean) are NOT defined
+# here: define them in YOUR Makefile, calling the suffixed targets provided
+# by the language files you included. Absent stacks print "[target] skipped"
+# and never fail — so aggregates may reference every suffix unconditionally.
 
-.PHONY: help clean devtools-update
+# Overridable shell configuration (last definition wins in GNU Make:
+# set these in your Makefile AFTER the includes to customize).
+SHELL      ?= /bin/bash
+.SHELLFLAGS ?= -eu -o pipefail -c
+.ONESHELL:
 
-help: ## Show available targets
-	@echo "Available targets:"
-	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+.PHONY: help devtools-update
 
-clean: ## Clean build artifacts (language-specific implementation provided by includer)
-	@echo "clean target must be defined by the language-specific Makefile"
+.DEFAULT_GOAL ?= help
 
-devtools-update: ## Update devtools submodule to latest pinned version
+help: ## Show this help message
+	@awk 'BEGIN {FS = ":.*##"; printf "\033[1mUsage:\033[0m make [target]\n\n"} /^##@/ {printf "\n\033[1m%s\033[0m\n", substr($$0, 5); next} /^[a-zA-Z_-]+:.*##/ {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+
+devtools-update: ## Update the devtools submodule to the latest tagged version
 	@if [ -d ".devtools" ]; then \
-		cd .devtools && git fetch origin && git checkout $$(git describe --tags `git rev-list --tags --max-count=1`) && cd .. && \
+		cd .devtools && git fetch origin --tags && git checkout $$(git describe --tags $$(git rev-list --tags --max-count=1)) && cd .. && \
 		echo "devtools updated to $$(cd .devtools && git describe --tags)"; \
 	else \
 		echo "No .devtools submodule found. Run: git submodule add https://github.com/ostara-labs/devtools .devtools"; \

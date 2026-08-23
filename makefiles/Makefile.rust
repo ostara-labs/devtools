@@ -1,45 +1,54 @@
-# Makefile.rust — standard targets for Rust projects
-# Include from your repo's Makefile:
-#   include .devtools/makefiles/Makefile.rust
+# Makefile.rust — monorepo targets for the rust/ stack.
+# Included by your Makefile. Every target is guarded: absent stack prints
+# "[target] skipped" and never fails, so aggregates may reference them all.
 #
-# Requires: cargo, cargo-nextest (recommended), cargo-clippy
+# Overridable variables (define in YOUR Makefile BEFORE/AFTER include):
+#   RUST_DIR ?= rust
 
-.PHONY: lint test build ci format clean miri check
+RUST_DIR ?= rust
 
-include $(dir $(lastword $(MAKEFILE_LIST)))Makefile.common
+.PHONY: deps-rust format-rust lint-rust test-rust build-rust clean-rust
 
-lint: ## Run cargo fmt --check + cargo clippy -D warnings
-	cargo fmt --all -- --check
-	cargo clippy --all-targets --all-features -- -D warnings
+##@ Rust
 
-test: ## Run cargo nextest (or cargo test as fallback)
-	@if command -v cargo-nextest >/dev/null 2>&1; then \
-		cargo nextest run; \
+deps-rust: ## Fetch Rust crates (cargo fetch)
+	@if [ ! -f $(RUST_DIR)/Cargo.toml ]; then \
+		echo "[deps-rust] skipped (no $(RUST_DIR)/Cargo.toml)"; \
 	else \
-		echo "Tip: install cargo-nextest for faster, better test output"; \
-		cargo test; \
+		cd $(RUST_DIR) && cargo fetch; \
 	fi
 
-build: ## Build the project in release mode
-	cargo build --release
-
-ci: lint test ## Run full CI checks locally (lint + test)
-
-format: ## Auto-format code with cargo fmt
-	cargo fmt --all
-
-check: ## Fast type check (cargo check)
-	cargo check --all-targets
-
-miri: ## Run cargo +nightly miri (UB gate — requires nightly toolchain)
-	@if rustup toolchain list 2>/dev/null | grep -q nightly; then \
-		cargo +nightly miri nextest run; \
+format-rust: ## Format Rust code (cargo fmt)
+	@if [ ! -f $(RUST_DIR)/Cargo.toml ]; then \
+		echo "[format-rust] skipped (no $(RUST_DIR)/Cargo.toml)"; \
 	else \
-		echo "Nightly toolchain not installed. Install with: rustup toolchain install nightly"; \
-		exit 1; \
+		cd $(RUST_DIR) && cargo fmt --all; \
 	fi
 
-clean: ## Clean build artifacts
-	cargo clean
+lint-rust: ## Lint Rust code (cargo fmt --check + clippy -D warnings)
+	@if [ ! -f $(RUST_DIR)/Cargo.toml ]; then \
+		echo "[lint-rust] skipped (no $(RUST_DIR)/Cargo.toml)"; \
+	else \
+		cd $(RUST_DIR) && cargo fmt --all -- --check && cargo clippy --all-targets --all-features -- -D warnings; \
+	fi
 
-## Repo-specific targets can be added below this line in your Makefile
+test-rust: ## Test Rust code (cargo-nextest if available, else cargo test)
+	@if [ ! -f $(RUST_DIR)/Cargo.toml ]; then \
+		echo "[test-rust] skipped (no $(RUST_DIR)/Cargo.toml)"; \
+	else \
+		cd $(RUST_DIR) && (command -v cargo-nextest >/dev/null 2>&1 && cargo nextest run || cargo test); \
+	fi
+
+build-rust: ## Build Rust release binary (cargo build --release)
+	@if [ ! -f $(RUST_DIR)/Cargo.toml ]; then \
+		echo "[build-rust] skipped (no $(RUST_DIR)/Cargo.toml)"; \
+	else \
+		cd $(RUST_DIR) && cargo build --release; \
+	fi
+
+clean-rust: ## Clean Rust build artifacts (cargo clean)
+	@if [ ! -f $(RUST_DIR)/Cargo.toml ]; then \
+		echo "[clean-rust] skipped (no $(RUST_DIR)/Cargo.toml)"; \
+	else \
+		cd $(RUST_DIR) && cargo clean; \
+	fi

@@ -1,39 +1,67 @@
-# Makefile.typescript — standard targets for TypeScript projects
-# Include from your repo's Makefile:
-#   include .devtools/makefiles/Makefile.typescript
+# Makefile.typescript — monorepo targets for the typescript/ stack.
+# Included by your Makefile. Every target is guarded: absent stack prints
+# "[target] skipped" and never fails.
 #
-# Requires: bun (recommended) or node + pnpm, biome (for lint/format)
+# Overridable variables:
+#   TS_DIR ?= typescript
+#
+# Note: run pnpm from inside typescript/ — corepack resolves the pinned
+# version per directory (running from the repo root resolves latest).
 
-.PHONY: lint test build ci format clean check deps
+TS_DIR ?= typescript
 
-include $(dir $(lastword $(MAKEFILE_LIST)))Makefile.common
+.PHONY: deps-typescript format-typescript lint-typescript test-typescript build-typescript clean-typescript
 
-lint: ## Run biome check + tsc --noEmit
-	bunx biome check
-	bunx tsc --noEmit
+##@ TypeScript
 
-test: ## Run bun test (or vitest as fallback)
-	@if [ -f "vitest.config.ts" ] || [ -f "vitest.config.js" ]; then \
-		bunx vitest run; \
+deps-typescript: ## Install TypeScript packages (pnpm install --frozen-lockfile)
+	@if [ ! -f $(TS_DIR)/package.json ]; then \
+		echo "[deps-typescript] skipped (no $(TS_DIR)/package.json)"; \
+	elif ! command -v pnpm >/dev/null 2>&1; then \
+		echo "[deps-typescript] skipped (pnpm not installed)"; \
 	else \
-		bun test; \
+		cd $(TS_DIR) && pnpm install --frozen-lockfile; \
 	fi
 
-build: ## Build the project
-	bun run build
+format-typescript: ## Format TypeScript code (biome format --write)
+	@if [ ! -f $(TS_DIR)/package.json ]; then \
+		echo "[format-typescript] skipped (no $(TS_DIR)/package.json)"; \
+	elif ! command -v pnpm >/dev/null 2>&1; then \
+		echo "[format-typescript] skipped (pnpm not installed)"; \
+	else \
+		cd $(TS_DIR) && pnpm run format; \
+	fi
 
-ci: lint test ## Run full CI checks locally (lint + test)
+lint-typescript: ## Lint TypeScript code (biome check + tsc --noEmit)
+	@if [ ! -f $(TS_DIR)/package.json ]; then \
+		echo "[lint-typescript] skipped (no $(TS_DIR)/package.json)"; \
+	elif ! command -v pnpm >/dev/null 2>&1; then \
+		echo "[lint-typescript] skipped (pnpm not installed)"; \
+	else \
+		cd $(TS_DIR) && pnpm run lint && pnpm run typecheck; \
+	fi
 
-format: ## Auto-format code with biome
-	bunx biome format --write
+test-typescript: ## Test TypeScript code (vitest run)
+	@if [ ! -f $(TS_DIR)/package.json ]; then \
+		echo "[test-typescript] skipped (no $(TS_DIR)/package.json)"; \
+	elif ! command -v pnpm >/dev/null 2>&1; then \
+		echo "[test-typescript] skipped (pnpm not installed)"; \
+	else \
+		cd $(TS_DIR) && pnpm run test; \
+	fi
 
-check: ## Fast type check (tsc --noEmit)
-	bunx tsc --noEmit
+build-typescript: ## Build TypeScript (tsc -p tsconfig.build.json)
+	@if [ ! -f $(TS_DIR)/package.json ]; then \
+		echo "[build-typescript] skipped (no $(TS_DIR)/package.json)"; \
+	elif ! command -v pnpm >/dev/null 2>&1; then \
+		echo "[build-typescript] skipped (pnpm not installed)"; \
+	else \
+		cd $(TS_DIR) && pnpm run build; \
+	fi
 
-deps: ## Install dependencies
-	bun install
-
-clean: ## Clean build artifacts
-	rm -rf dist node_modules/.cache
-
-## Repo-specific targets can be added below this line in your Makefile
+clean-typescript: ## Remove TypeScript artifacts (node_modules, dist, coverage)
+	@if [ ! -f $(TS_DIR)/package.json ]; then \
+		echo "[clean-typescript] skipped (no $(TS_DIR)/package.json)"; \
+	else \
+		rm -rf $(TS_DIR)/node_modules $(TS_DIR)/dist $(TS_DIR)/coverage; \
+	fi

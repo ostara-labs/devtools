@@ -1,0 +1,81 @@
+name: TypeScript CI
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  typescript:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Detect TypeScript stack
+        id: detect
+        shell: bash
+        run: |
+          if [ -f typescript/package.json ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Node
+        if: steps.detect.outputs.present == 'true'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Enable corepack
+        if: steps.detect.outputs.present == 'true'
+        run: corepack enable
+        # Fallback: if corepack is unavailable, install pnpm via `npm install -g pnpm`.
+
+      - name: Set pnpm store path
+        if: steps.detect.outputs.present == 'true'
+        run: cd typescript && echo "STORE_PATH=$(pnpm store path)" >> "$GITHUB_ENV"
+
+      - name: Cache pnpm store
+        if: steps.detect.outputs.present == 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: pnpm-${{ runner.os }}-${{ hashFiles('typescript/pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-${{ runner.os }}-
+
+      - name: Install dependencies
+        if: steps.detect.outputs.present == 'true'
+        shell: bash
+        # Run pnpm from inside the package dir so corepack resolves the
+        # version pinned in "packageManager" (repo root has no package.json).
+        run: |
+          if [ -f pnpm-lock.yaml ]; then
+            cd typescript && pnpm install --frozen-lockfile
+          else
+            cd typescript && pnpm install
+          fi
+
+      - name: Lint
+        if: steps.detect.outputs.present == 'true'
+        run: cd typescript && pnpm run lint
+
+      - name: Typecheck
+        if: steps.detect.outputs.present == 'true'
+        run: cd typescript && pnpm run typecheck
+
+      - name: Test
+        if: steps.detect.outputs.present == 'true'
+        run: cd typescript && pnpm run test
+
+      - name: Build
+        if: steps.detect.outputs.present == 'true'
+        run: cd typescript && pnpm run build

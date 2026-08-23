@@ -1,0 +1,147 @@
+name: PR meta
+
+# Automatic PR classification so humans never tick boxes for things a
+# machine computes better:
+#   - title  : enforces Conventional Commits on the PR title (blocking)
+#   - size   : labels size/S|size/M|size/L|size/XL from the diff
+#   - risk   : labels risk/low|risk/medium|risk/high (trust-boundary files
+#              => risk/high; docs-only => risk/low)
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  title:
+    name: title
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Conventional Commits title
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          set -euo pipefail
+          pattern='^(Merge |Revert |fixup! )|^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-zA-Z0-9_./-]+\))?(!)?: .{1,}$'
+          if [ ${#TITLE} -le 100 ] && echo "$TITLE" | grep -qE "$pattern"; then
+            echo "title ok: $TITLE"
+          else
+            echo "PR title must follow Conventional Commits:" >&2
+            echo "  type(scope)!: subject   e.g. 'feat(rust): add retry loop'" >&2
+            echo "  types: feat fix docs style refactor perf test build ci chore revert" >&2
+            exit 1
+          fi
+
+  size:
+    name: size
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - name: Compute and apply size label
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --quiet origin "$BASE_SHA"
+
+          ensure_label() {
+            gh label create "$1" --color "$2" --force >/dev/null 2>&1 || true
+          }
+          ensure_label size/S 0e8a16
+          ensure_label size/M fbca04
+          ensure_label size/L f9d0c4
+          ensure_label size/XL d93f0b
+
+          # Changed lines excluding lockfiles and generated artifacts.
+          lines=$(git diff --numstat "$BASE_SHA" "$HEAD_SHA" \
+            | grep -vE '(Cargo\.lock|pnpm-lock\.yaml|mix\.lock|uv\.lock)$' \
+            | awk '{sum+=$1+$2} END {print sum+0}')
+
+          if   [ "$lines" -lt 10 ]; then label=size/S
+          elif [ "$lines" -lt 100 ]; then label=size/M
+          elif [ "$lines" -lt 500 ]; then label=size/L
+          else label=size/XL
+          fi
+          echo "changed lines: $lines -> $label"
+
+          for l in size/S size/M size/L size/XL; do
+            if [ "$l" != "$label" ]; then
+              gh pr edit "$PR_NUMBER" --remove-label "$l" >/dev/null 2>&1 || true
+            fi
+          done
+          gh pr edit "$PR_NUMBER" --add-label "$label" >/dev/null
+
+          if [ "$label" = "size/XL" ]; then
+            {
+              echo ':warning: This PR changes **500+ lines**. Large PRs are harder to review thoroughly - consider splitting it into independent, mergeable pieces if the change allows it.'
+            } > body.md
+            gh pr comment "$PR_NUMBER" --body-file body.md >/dev/null
+            rm -f body.md
+          fi
+
+  risk:
+    name: risk
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - name: Compute and apply risk label
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --quiet origin "$BASE_SHA"
+          changed="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
+          [ -n "$changed" ] || exit 0
+
+          ensure_label() {
+            gh label create "$1" --color "$2" --force >/dev/null 2>&1 || true
+          }
+          ensure_label risk/low 0e8a16
+          ensure_label risk/medium fbca04
+          ensure_label risk/high d93f0b
+
+          matches_pattern() {
+            local file="$1" pattern
+            while IFS= read -r pattern; do
+              [ -n "$pattern" ] || continue
+              # shellcheck disable=SC2053
+              if [[ "$file" == $pattern ]]; then return 0; fi
+            done < <(sed -E 's/^[[:space:]]*-[[:space:]]*//' .github/trust-boundary.yml | grep -v '^[[:space:]]*$' | grep -v '^#')
+            return 1
+          }
+
+          high=0; docs_only=1
+          while IFS= read -r file; do
+            if matches_pattern "$file"; then high=1; fi
+            if ! echo "$file" | grep -qE '(^docs/|\.md$)'; then docs_only=0; fi
+          done <<< "$changed"
+
+          if [ "$high" -eq 1 ]; then label=risk/high
+          elif [ "$docs_only" -eq 1 ]; then label=risk/low
+          else label=risk/medium
+          fi
+          echo "risk: $label"
+
+          for l in risk/low risk/medium risk/high; do
+            if [ "$l" != "$label" ]; then
+              gh pr edit "$PR_NUMBER" --remove-label "$l" >/dev/null 2>&1 || true
+            fi
+          done
+          gh pr edit "$PR_NUMBER" --add-label "$label" >/dev/null

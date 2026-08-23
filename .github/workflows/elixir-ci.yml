@@ -1,84 +1,58 @@
-# elixir-ci.yml — reusable CI workflow for Elixir/Phoenix repos
-# Used by: uses: ostara-labs/devtools/.github/workflows/elixir-ci.yml@v1
-#
-# Inputs:
-#   elixir-version: (string, default "1.17") — Elixir version
-#   otp-version:    (string, default "27")   — Erlang/OTP version
-#   run-credo:      (bool, default true)     — run mix credo
-
 name: Elixir CI
 
 on:
   workflow_call:
-    inputs:
-      elixir-version:
-        description: 'Elixir version'
-        type: string
-        default: '1.17'
-      otp-version:
-        description: 'Erlang/OTP version'
-        type: string
-        default: '27'
-      run-credo:
-        description: 'Run mix credo --strict'
-        type: boolean
-        default: true
 
-env:
-  MIX_ENV: test
+permissions:
+  contents: read
 
 jobs:
-  lint:
-    name: Lint (format + credo)
-    runs-on: ubuntu-latest
+  elixir:
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Elixir
-        uses: erlef/setup-beam@v1
+      - name: Harden runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2
         with:
-          elixir-version: ${{ inputs.elixir-version }}
-          otp-version: ${{ inputs.otp-version }}
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Detect Elixir stack
+        id: detect
+        shell: bash
+        run: |
+          if [ -f elixir/mix.exs ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Beam
+        if: steps.detect.outputs.present == 'true'
+        uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1
+        with:
+          otp-version: "27"
+          elixir-version: "1.18"
 
       - name: Cache deps
-        uses: actions/cache@v4
+        if: steps.detect.outputs.present == 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: deps
-          key: deps-${{ runner.os }}-${{ inputs.elixir-version }}-${{ hashFiles('mix.lock') }}
+          path: elixir/deps
+          key: mix-deps-27-1.18-${{ hashFiles('elixir/mix.lock') }}
+          restore-keys: |
+            mix-deps-27-1.18-
 
-      - name: Install deps
-        run: mix deps.get
-
-      - name: mix format --check-formatted
-        run: mix format --check-formatted
-
-      - name: mix credo --strict
-        if: inputs.run-credo
-        run: mix credo --strict
-
-  test:
-    name: Tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Elixir
-        uses: erlef/setup-beam@v1
+      - name: Cache build
+        if: steps.detect.outputs.present == 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          elixir-version: ${{ inputs.elixir-version }}
-          otp-version: ${{ inputs.otp-version }}
+          path: elixir/_build
+          key: mix-build-27-1.18-${{ hashFiles('elixir/mix.lock') }}
+          restore-keys: |
+            mix-build-27-1.18-
 
-      - name: Cache deps
-        uses: actions/cache@v4
-        with:
-          path: deps
-          key: deps-${{ runner.os }}-${{ inputs.elixir-version }}-${{ hashFiles('mix.lock') }}
-
-      - name: Install deps
-        run: mix deps.get
-
-      - name: Compile
-        run: mix compile --warnings-as-errors
-
-      - name: mix test
-        run: mix test
+      - name: Check
+        if: steps.detect.outputs.present == 'true'
+        run: cd elixir && mix deps.get && mix format --check-formatted && mix credo --strict && mix test

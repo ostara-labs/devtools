@@ -1,34 +1,54 @@
-# Makefile.elixir — standard targets for Elixir/Phoenix projects
-# Include from your repo's Makefile:
-#   include .devtools/makefiles/Makefile.elixir
+# Makefile.elixir — monorepo targets for the elixir/ stack.
+# Included by your Makefile. Every target is guarded: absent stack prints
+# "[target] skipped" and never fails.
 #
-# Requires: elixir, mix, credo (mix archive.install hex credo)
+# Overridable variables:
+#   ELIXIR_DIR ?= elixir
 
-.PHONY: lint test build ci format clean deps
+ELIXIR_DIR ?= elixir
 
-include $(dir $(lastword $(MAKEFILE_LIST)))Makefile.common
+.PHONY: deps-elixir format-elixir lint-elixir test-elixir build-elixir clean-elixir
 
-lint: ## Run mix format --check + mix credo --strict
-	mix format --check-formatted
-	mix credo --strict
+##@ Elixir
 
-test: ## Run mix test
-	mix test
+deps-elixir: ## Fetch Elixir dependencies (mix local.hex + mix deps.get)
+	@if [ ! -f $(ELIXIR_DIR)/mix.exs ]; then \
+		echo "[deps-elixir] skipped (no $(ELIXIR_DIR)/mix.exs)"; \
+	else \
+		cd $(ELIXIR_DIR) && mix local.hex --if-missing --force && mix deps.get; \
+	fi
 
-build: ## Build a production release
-	mix deps.get --only prod
-	MIX_ENV=prod mix release
+format-elixir: ## Format Elixir code (mix format)
+	@if [ ! -f $(ELIXIR_DIR)/mix.exs ]; then \
+		echo "[format-elixir] skipped (no $(ELIXIR_DIR)/mix.exs)"; \
+	else \
+		cd $(ELIXIR_DIR) && mix format; \
+	fi
 
-ci: lint test ## Run full CI checks locally (lint + test)
+lint-elixir: ## Lint Elixir code (mix format --check-formatted + credo --strict)
+	@if [ ! -f $(ELIXIR_DIR)/mix.exs ]; then \
+		echo "[lint-elixir] skipped (no $(ELIXIR_DIR)/mix.exs)"; \
+	else \
+		cd $(ELIXIR_DIR) && mix format --check-formatted && mix credo --strict; \
+	fi
 
-format: ## Auto-format code with mix format
-	mix format
+test-elixir: ## Test Elixir code (mix test)
+	@if [ ! -f $(ELIXIR_DIR)/mix.exs ]; then \
+		echo "[test-elixir] skipped (no $(ELIXIR_DIR)/mix.exs)"; \
+	else \
+		cd $(ELIXIR_DIR) && mix test; \
+	fi
 
-deps: ## Fetch and compile dependencies
-	mix deps.get
-	mix deps.compile
+build-elixir: ## Compile Elixir project (mix compile)
+	@if [ ! -f $(ELIXIR_DIR)/mix.exs ]; then \
+		echo "[build-elixir] skipped (no $(ELIXIR_DIR)/mix.exs)"; \
+	else \
+		cd $(ELIXIR_DIR) && mix compile; \
+	fi
 
-clean: ## Clean build artifacts
-	mix clean --deps
-
-## Repo-specific targets can be added below this line in your Makefile
+clean-elixir: ## Remove Elixir build artifacts (_build, deps)
+	@if [ ! -f $(ELIXIR_DIR)/mix.exs ]; then \
+		echo "[clean-elixir] skipped (no $(ELIXIR_DIR)/mix.exs)"; \
+	else \
+		rm -rf $(ELIXIR_DIR)/_build $(ELIXIR_DIR)/deps; \
+	fi
