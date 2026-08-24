@@ -17,4 +17,4 @@ jobs:
     name: gate
     runs-on: ubuntu-24.04
     steps:
-      - uses: ostara-labs/devtools/.github/actions/org-gate@b5120da9fed9813a787662091af04eb63cfedf39 # v1.1.0
+      - uses: ostara-labs/devtools/.github/actions/org-gate@v1
