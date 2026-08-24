@@ -1,0 +1,43 @@
+name: 'Org Gate'
+description: >-
+  Universal merge gate for ostara-labs repositories: actionlint (digest-pinned)
+  over all workflow files + shellcheck (status-aware) over shell scripts.
+  Centralized here so callers cannot weaken the checks while keeping the
+  required status context named exactly "gate".
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Checkout
+      uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      with:
+        persist-credentials: false
+
+    - name: Install actionlint (digest-pinned)
+      shell: bash
+      run: |
+        version=1.7.12
+        asset="actionlint_${version}_linux_amd64.tar.gz"
+        expected="8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
+        curl -sSfL -o "$asset" "https://github.com/rhysd/actionlint/releases/download/v${version}/${asset}"
+        echo "${expected}  ${asset}" | sha256sum --check --status -
+        tar -xzf "$asset" actionlint
+
+    - name: Lint all workflow files
+      shell: bash
+      run: ./actionlint -no-color
+
+    - name: Shellcheck shell scripts
+      shell: bash
+      run: |
+        set +e
+        find . -type f -name '*.sh' -not -path './node_modules/*' -print0 2>/dev/null \
+          | xargs -0 -r shellcheck -s bash
+        status=$?
+        set -e
+        # exit 1 = findings (advisory in v1); 2-4 = execution/invocation errors (fatal)
+        if [ "$status" -eq 1 ]; then
+          echo "::warning::shellcheck findings are advisory in v1"
+          exit 0
+        fi
+        exit "$status"

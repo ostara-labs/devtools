@@ -18,24 +18,10 @@ jobs:
     name: gate
     runs-on: ubuntu-24.04
     steps:
-      - name: Checkout
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          persist-credentials: false
+      - uses: ostara-labs/devtools/.github/actions/org-gate@f5b4782 # v1.1.0 (moved to tag after push)
 
-      - name: Install actionlint (checksum-verified)
-        run: |
-          version=1.7.12
-          asset="actionlint_${version}_linux_amd64.tar.gz"
-          curl -sSfL -o "$asset" "https://github.com/rhysd/actionlint/releases/download/v${version}/${asset}"
-          curl -sSfL -o checksums.txt "https://github.com/rhysd/actionlint/releases/download/v${version}/actionlint_${version}_checksums.txt"
-          grep "$asset" checksums.txt | sha256sum --check --status -
-          tar -xzf "$asset" actionlint
-
-      - name: Lint all workflow files
-        run: ./actionlint -no-color
-
-      - name: Shellcheck scripts and hooks
-        run: |
-          # .ps1 excluded: PowerShell files are not bash.
-          find scripts hooks -type f ! -name '*.ps1' -print0 | xargs -0 shellcheck -s bash
+      # devtools-specific: extensionless git hooks are outside the
+      # composite's *.sh discovery.
+      - name: Shellcheck extensionless hooks
+        shell: bash
+        run: find hooks -maxdepth 1 -type f -print0 | xargs -0 -r shellcheck -s bash
