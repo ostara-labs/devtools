@@ -518,3 +518,26 @@ rust-ci:
 The input defaults to each workflow's conventional directory (`rust`,
 `typescript`, `elixir`, `python`), so existing callers that pass no inputs
 keep their current behavior unchanged.
+
+---
+
+## Dispatch after automerge
+
+GitHub never triggers workflows from pushes made with `GITHUB_TOKEN` (the
+anti-recursion rule). A PR auto-merged by automation therefore starts **no**
+build or deploy on the target branch — the merge succeeds while nothing runs.
+Place this composite action immediately **after** the merge step in whatever
+workflow performs automerges:
+
+```yaml
+- uses: ostara-labs/devtools/.github/actions/automerge-dispatch@<full-sha> # v1.2.x
+  with:
+    workflow: deploy.yml   # target workflow FILE name
+    ref: main              # default: main
+  env:
+    GH_TOKEN: ${{ secrets.AUTOMERGE_TOKEN }}   # needs actions:write
+```
+
+It retries the dispatch (default 3 attempts, hard-fails on exhaustion) and
+verifies a `workflow_dispatch` run appeared for the ref (warn-only). Extracted
+from bot's pr-classify.yml fix for missed deploys (bot#38).
