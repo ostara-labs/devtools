@@ -499,3 +499,22 @@ git commit -m "chore: add devtools submodule"
 
 To add CI, create `.github/workflows/ci.yml` referencing the reusable workflows
 (see Step 5.4).
+
+---
+
+## Flat-layout repositories
+
+The language CI workflows assume code lives in a stack subdirectory
+(`rust/`, `typescript/`, `elixir/`, `python/`). Repositories with code at the
+repository root can pass an optional `stack-dir` input instead:
+
+```yaml
+rust-ci:
+  uses: ostara-labs/devtools/.github/workflows/rust-ci.yml@v1.2.0
+  with:
+    stack-dir: "."
+```
+
+The input defaults to each workflow's conventional directory (`rust`,
+`typescript`, `elixir`, `python`), so existing callers that pass no inputs
+keep their current behavior unchanged.

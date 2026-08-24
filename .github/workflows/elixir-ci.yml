@@ -2,6 +2,12 @@ name: Elixir CI
 
 on:
   workflow_call:
+    inputs:
+      stack-dir:
+        description: "Directory containing this stack's manifest (Cargo.toml / package.json / mix.exs / pyproject.toml)"
+        required: false
+        type: string
+        default: "elixir"
 
 permissions:
   contents: read
@@ -9,6 +15,8 @@ permissions:
 jobs:
   elixir:
     runs-on: ubuntu-24.04
+    env:
+      STACK_DIR: ${{ inputs['stack-dir'] }}
     steps:
       - name: Harden runner
         uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2
@@ -22,7 +30,7 @@ jobs:
         id: detect
         shell: bash
         run: |
-          if [ -f elixir/mix.exs ]; then
+          if [ -f "$STACK_DIR/mix.exs" ]; then
             echo "present=true" >> "$GITHUB_OUTPUT"
           else
             echo "present=false" >> "$GITHUB_OUTPUT"
@@ -39,8 +47,8 @@ jobs:
         if: steps.detect.outputs.present == 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: elixir/deps
-          key: mix-deps-27-1.18-${{ hashFiles('elixir/mix.lock') }}
+          path: ${{ inputs['stack-dir'] }}/deps
+          key: mix-deps-27-1.18-${{ hashFiles(format('{0}/mix.lock', inputs['stack-dir'])) }}
           restore-keys: |
             mix-deps-27-1.18-
 
@@ -48,11 +56,11 @@ jobs:
         if: steps.detect.outputs.present == 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: elixir/_build
-          key: mix-build-27-1.18-${{ hashFiles('elixir/mix.lock') }}
+          path: ${{ inputs['stack-dir'] }}/_build
+          key: mix-build-27-1.18-${{ hashFiles(format('{0}/mix.lock', inputs['stack-dir'])) }}
           restore-keys: |
             mix-build-27-1.18-
 
       - name: Check
         if: steps.detect.outputs.present == 'true'
-        run: cd elixir && mix deps.get && mix format --check-formatted && mix credo --strict && mix test
+        run: cd "$STACK_DIR" && mix deps.get && mix format --check-formatted && mix credo --strict && mix test

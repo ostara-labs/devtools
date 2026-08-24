@@ -2,6 +2,12 @@ name: Rust CI
 
 on:
   workflow_call:
+    inputs:
+      stack-dir:
+        description: "Directory containing this stack's manifest (Cargo.toml / package.json / mix.exs / pyproject.toml)"
+        required: false
+        type: string
+        default: "rust"
 
 permissions:
   contents: read
@@ -9,6 +15,8 @@ permissions:
 jobs:
   rust:
     runs-on: ubuntu-24.04
+    env:
+      STACK_DIR: ${{ inputs['stack-dir'] }}
     steps:
       - name: Harden runner
         uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2
@@ -22,7 +30,7 @@ jobs:
         id: detect
         shell: bash
         run: |
-          if [ -f rust/Cargo.toml ]; then
+          if [ -f "$STACK_DIR/Cargo.toml" ]; then
             echo "present=true" >> "$GITHUB_OUTPUT"
           else
             echo "present=false" >> "$GITHUB_OUTPUT"
@@ -38,12 +46,12 @@ jobs:
         if: steps.detect.outputs.present == 'true'
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
-          workspaces: rust
+          workspaces: ${{ inputs['stack-dir'] }}
 
       - name: Lint
         if: steps.detect.outputs.present == 'true'
-        run: cd rust && cargo fmt --all -- --check && cargo clippy --all-targets --all-features -- -D warnings
+        run: cd "$STACK_DIR" && cargo fmt --all -- --check && cargo clippy --all-targets --all-features -- -D warnings
 
       - name: Test
         if: steps.detect.outputs.present == 'true'
-        run: cd rust && cargo test
+        run: cd "$STACK_DIR" && cargo test
