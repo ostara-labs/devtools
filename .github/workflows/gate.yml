@@ -1,8 +1,8 @@
 name: CI Gate
 
-# Single universal status context required by the org ruleset
-# ("main-protection"). Everything mergeable must prove itself here.
-# Composition may grow (lint, tests); the contract stays: gate green = mergeable.
+# Single universal status context required by the org ruleset ("gate").
+# The logic is centralized and SHA-pinned in devtools — it cannot be
+# weakened from this repository: ostara-labs/devtools/.github/actions/org-gate
 
 on:
   push:
@@ -17,26 +17,4 @@ jobs:
     name: gate
     runs-on: ubuntu-24.04
     steps:
-      - name: Checkout
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          persist-credentials: false
-
-      - name: Install actionlint (checksum-verified)
-        run: |
-          version=1.7.12
-          asset="actionlint_${version}_linux_amd64.tar.gz"
-          curl -sSfL -o "$asset" "https://github.com/rhysd/actionlint/releases/download/v${version}/${asset}"
-          curl -sSfL -o checksums.txt "https://github.com/rhysd/actionlint/releases/download/v${version}/actionlint_${version}_checksums.txt"
-          grep "$asset" checksums.txt | sha256sum --check --status -
-          tar -xzf "$asset" actionlint
-
-      - name: Lint all workflow files
-        run: ./actionlint -no-color
-
-      - name: Shellcheck shell scripts
-        shell: bash
-        run: |
-          # advisory pass for now: legacy scripts may need cleanup first
-          find . -type f -name '*.sh' -not -path './node_modules/*' -print0 2>/dev/null \
-            | xargs -0 -r shellcheck -s bash || echo "::warning::shellcheck findings are advisory in v1"
+      - uses: ostara-labs/devtools/.github/actions/org-gate@v1
