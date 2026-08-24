@@ -19,7 +19,8 @@ runs:
         version=1.7.12
         asset="actionlint_${version}_linux_amd64.tar.gz"
         expected="8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
-        curl -sSfL -o "$asset" "https://github.com/rhysd/actionlint/releases/download/v${version}/${asset}"
+        curl -sSfL --connect-timeout 10 --max-time 120 -o "$asset" \
+          "https://github.com/rhysd/actionlint/releases/download/v${version}/${asset}"
         echo "${expected}  ${asset}" | sha256sum --check --status -
         tar -xzf "$asset" actionlint
 
@@ -30,9 +31,16 @@ runs:
     - name: Shellcheck shell scripts
       shell: bash
       run: |
+        # Collect first: xargs would map shellcheck's exit 1 to 123, hiding
+        # the distinction between "findings" (advisory) and "errors" (fatal).
+        mapfile -d '' scripts < <(find . -type f -name '*.sh' \
+          -not -path './node_modules/*' -print0 2>/dev/null)
+        if [ "${#scripts[@]}" -eq 0 ]; then
+          echo "no shell scripts found"
+          exit 0
+        fi
         set +e
-        find . -type f -name '*.sh' -not -path './node_modules/*' -print0 2>/dev/null \
-          | xargs -0 -r shellcheck -s bash
+        shellcheck -s bash "${scripts[@]}"
         status=$?
         set -e
         # exit 1 = findings (advisory in v1); 2-4 = execution/invocation errors (fatal)
