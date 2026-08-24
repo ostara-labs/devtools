@@ -18,7 +18,7 @@ jobs:
     name: gate
     runs-on: ubuntu-24.04
     steps:
-      - uses: ostara-labs/devtools/.github/actions/org-gate@f5b478291584598434aa03ecde66ef357b78dc44 # full SHA (Actions reject short refs); predates tag v1.1.0
+      - uses: ostara-labs/devtools/.github/actions/org-gate@4364455c3e2e74ebab2d0c113673d9e75e111f7f # v1.1.1
 
       # devtools-specific: extensionless git hooks are outside the
       # composite's *.sh discovery.
