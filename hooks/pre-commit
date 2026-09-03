@@ -304,7 +304,10 @@ for file in $STAGED_FILES; do
   filepath="$REPO_ROOT/$file"
   [ ! -f "$filepath" ] && continue
   if file "$filepath" 2>/dev/null | grep -qi 'text\|json\|yaml\|xml\|empty'; then
-    ws_lines=$(grep -nE '[ \t]+$' "$filepath" 2>/dev/null || true)
+    # POSIX bracket classes only: '[ \t]' does NOT mean space+tab in grep —
+    # backslash is literal inside [], so the class matched space, backslash
+    # or the letter 't', flagging every line ending in 't' (e.g. "rust").
+    ws_lines=$(grep -nE '[[:blank:]]+$' "$filepath" 2>/dev/null || true)
     if [ -n "$ws_lines" ]; then
       fail "$file has trailing whitespace.\n$ws_lines"
     fi
