@@ -3,6 +3,12 @@ name: Python CI
 on:
   workflow_call:
     inputs:
+      postgis-image:
+        description: "PostGIS docker image for DB-backed tests (empty = skip the database job)"
+        required: false
+        type: string
+        default: ""
+    inputs:
       stack-dir:
         description: "Directory containing this stack's manifest (Cargo.toml / package.json / mix.exs / pyproject.toml)"
         required: false
@@ -63,3 +69,61 @@ jobs:
       - name: Test
         if: steps.detect.outputs.present == 'true'
         run: uv run --directory "$STACK_DIR" pytest
+
+  # DB-backed test run for repos that opt in via the postgis-image input.
+  # The service uses the postgres image's default credentials and exports
+  # a generic CI_DATABASE_URL; the repo's conftest decides how to consume
+  # it. Non-PostGIS repos pay zero cost (job is skipped, nothing pulled).
+  test-postgis:
+    if: inputs.postgis-image != ''
+    runs-on: ubuntu-24.04
+    services:
+      postgis:
+        image: ${{ inputs.postgis-image }}
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+          --health-start-period 10s
+    env:
+      CI_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/postgres
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          enable-cache: false
+
+      - name: Sync dependencies
+        run: uv sync --directory python
+
+      # The image ships the extension binaries but does not register the
+      # extension in every database on every tag - never rely on that.
+      - name: Enable PostGIS extension
+        shell: bash
+        run: |
+          PGPASSWORD=postgres psql -h localhost -U postgres \
+            -v ON_ERROR_STOP=1 \
+            -c "CREATE EXTENSION IF NOT EXISTS postgis"
+
+      - name: Test against PostGIS
+        run: uv run --directory python pytest
