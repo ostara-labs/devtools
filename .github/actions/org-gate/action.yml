@@ -21,6 +21,9 @@ runs:
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         persist-credentials: false
+        # Full history: the incremental gitleaks range scan (BASE..HEAD)
+        # needs the PR's commits, which a depth-1 checkout omits.
+        fetch-depth: 0
 
     - name: Install actionlint (digest-pinned)
       shell: bash
@@ -59,16 +62,15 @@ runs:
         fi
         exit "$status"
 
-    - name: Install gitleaks (checksum-verified)
+    - name: Install gitleaks (digest-pinned)
       shell: bash
       run: |
         version=8.28.0
         asset="gitleaks_${version}_linux_x64.tar.gz"
+        expected="a65b5253807a68ac0cafa4414031fd740aeb55f54fb7e55f386acb52e6a840eb"
         curl -sSfL --connect-timeout 10 --max-time 120 -o "$asset" \
           "https://github.com/gitleaks/gitleaks/releases/download/v${version}/${asset}"
-        curl -sSfL --connect-timeout 10 --max-time 120 -o checksums.txt \
-          "https://github.com/gitleaks/gitleaks/releases/download/v${version}/gitleaks_${version}_checksums.txt"
-        grep "$asset" checksums.txt | sha256sum --check --status -
+        echo "${expected}  ${asset}" | sha256sum --check --status -
         tar -xzf "$asset" gitleaks
 
     # Incremental range per event. Config + ignore are taken from the
@@ -96,8 +98,12 @@ runs:
           git fetch --quiet origin "$BASE_SHA" 2>/dev/null || true
           LOG_OPTS=(--log-opts="$BASE_SHA..HEAD")
         else
-          # no trusted base (e.g. first push): scan everything reachable
-          git fetch --quiet --unshallow 2>/dev/null || true
+          # no trusted base (e.g. first push): scan everything reachable.
+          # Fail loudly if the repo is shallow and we cannot unshallow it —
+          # a tip-only scan could pass while an earlier commit has a secret.
+          if git rev-parse --is-shallow-repository 2>/dev/null | grep -q true; then
+            git fetch --quiet --unshallow
+          fi
         fi
         ./gitleaks git "${LOG_OPTS[@]}" "${CONFIG[@]}" --verbose --redact \
           --exit-code 1 --gitleaks-ignore-path "$IGNORE" .
