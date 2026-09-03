@@ -38,6 +38,14 @@ jobs:
     name: core
     runs-on: ubuntu-24.04
     steps:
+      # Checkout required BEFORE the local composite reference: `uses: ./`
+      # resolves against the workspace, not the repo (remote references
+      # don't need this; a local action does).
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
       - uses: ./.github/actions/org-gate
         with:
           base-sha: ${{ github.event.pull_request.base.sha || github.event.before }}
