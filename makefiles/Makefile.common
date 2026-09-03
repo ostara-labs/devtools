@@ -16,7 +16,7 @@ SHELL      := /bin/bash
 .SHELLFLAGS := -eu -o pipefail -c
 .ONESHELL:
 
-.PHONY: help devtools-update
+.PHONY: help devtools-update hooks
 
 .DEFAULT_GOAL ?= help
 
@@ -30,3 +30,7 @@ devtools-update: ## Update the devtools submodule to the latest tagged version
 	else \
 		echo "No .devtools submodule found. Run: git submodule add https://github.com/ostara-labs/devtools .devtools"; \
 	fi
+
+hooks: ## Activate the devtools git hooks (pre-commit, commit-msg, pre-push)
+	@git config core.hooksPath .devtools/hooks && \
+		echo "devtools hooks activated: core.hooksPath = .devtools/hooks"

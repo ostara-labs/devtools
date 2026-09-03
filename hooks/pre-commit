@@ -8,6 +8,12 @@
 #   2. No .env files committed
 #   3. No source file > 250 pure LOC
 #   4. Trust-boundary awareness (warning)
+#   13. No trailing whitespace (markdown excluded — hard line breaks)
+#   14. Files end with a newline
+#   15. No unresolved merge conflict markers
+#   16. No staged file > 500 KB
+#   17. Staged .yml/.yaml parse cleanly (graceful skip without PyYAML)
+#   18. Staged .toml parse cleanly (graceful skip without python >= 3.11)
 #
 # Enforces (Rust):
 #   5. No unwrap()/expect() outside #[cfg(test)] (rust-style.md § rule 1)
@@ -283,6 +289,86 @@ if [ "$HAS_TS" = true ]; then
     if ! bunx biome check 2>&1; then
       fail "biome check failed — run 'bunx biome check --write' to fix."
     fi
+  fi
+fi
+
+# --- 13-18. File hygiene (absorbed from the org's former pre-commit
+# framework config; consolidated here so ONE hook mechanism exists) ---
+
+# 13. Trailing whitespace (markdown excluded: trailing double spaces are
+#     hard line breaks there)
+for file in $STAGED_FILES; do
+  case "$file" in
+    *.md) continue ;;
+  esac
+  filepath="$REPO_ROOT/$file"
+  [ ! -f "$filepath" ] && continue
+  if file "$filepath" 2>/dev/null | grep -qi 'text\|json\|yaml\|xml\|empty'; then
+    ws_lines=$(grep -nE '[ \t]+$' "$filepath" 2>/dev/null || true)
+    if [ -n "$ws_lines" ]; then
+      fail "$file has trailing whitespace.\n$ws_lines"
+    fi
+  fi
+done
+
+# 14. Files end with a newline
+for file in $STAGED_FILES; do
+  filepath="$REPO_ROOT/$file"
+  [ ! -f "$filepath" ] && continue
+  [ ! -s "$filepath" ] && continue
+  if file "$filepath" 2>/dev/null | grep -qi 'text\|json\|yaml\|xml\|empty'; then
+    if [ "$(tail -c 1 "$filepath" | wc -l)" -eq 0 ]; then
+      fail "$file does not end with a newline."
+    fi
+  fi
+done
+
+# 15. Unresolved merge conflict markers
+for file in $STAGED_FILES; do
+  filepath="$REPO_ROOT/$file"
+  [ ! -f "$filepath" ] && continue
+  if file "$filepath" 2>/dev/null | grep -qi 'text\|json\|yaml\|xml\|empty'; then
+    conflict_lines=$(grep -nE '^(<{7} |={7}$|>{7} )' "$filepath" 2>/dev/null || true)
+    if [ -n "$conflict_lines" ]; then
+      fail "$file contains unresolved merge conflict markers.\n$conflict_lines"
+    fi
+  fi
+done
+
+# 16. Large staged files (> 500 KB) — Git LFS or split territory
+for file in $STAGED_FILES; do
+  filepath="$REPO_ROOT/$file"
+  [ ! -f "$filepath" ] && continue
+  size_bytes=$(wc -c < "$filepath" 2>/dev/null || echo 0)
+  if [ "$size_bytes" -gt 512000 ]; then
+    fail "$file is $((size_bytes / 1024)) KB (max 500 KB). Use Git LFS or split the file."
+  fi
+done
+
+# 17-18. YAML / TOML parse checks (best-effort: skipped when the parser is
+# unavailable — CI runs actionlint/yamllint-style checks regardless)
+PY="$(command -v python3 || command -v python || true)"
+if [ -n "$PY" ]; then
+  YAML_FILES=$(echo "$STAGED_FILES" | grep -E '\.ya?ml$' || true)
+  if [ -n "$YAML_FILES" ] && "$PY" -c 'import yaml' 2>/dev/null; then
+    for file in $YAML_FILES; do
+      filepath="$REPO_ROOT/$file"
+      [ ! -f "$filepath" ] && continue
+      if ! "$PY" -c "import sys, yaml; yaml.safe_load(open(sys.argv[1], encoding='utf-8'))" "$filepath" 2>/dev/null; then
+        fail "$file is not valid YAML."
+      fi
+    done
+  fi
+
+  TOML_FILES=$(echo "$STAGED_FILES" | grep -E '\.toml$' || true)
+  if [ -n "$TOML_FILES" ] && "$PY" -c 'import tomllib' 2>/dev/null; then
+    for file in $TOML_FILES; do
+      filepath="$REPO_ROOT/$file"
+      [ ! -f "$filepath" ] && continue
+      if ! "$PY" -c "import sys, tomllib; tomllib.load(open(sys.argv[1], 'rb'))" "$filepath" 2>/dev/null; then
+        fail "$file is not valid TOML."
+      fi
+    done
   fi
 fi
 

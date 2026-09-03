@@ -5,6 +5,10 @@ name: Classify PR
 # comment listing exactly what was touched. Informational only: the actual
 # merge gate is the "main-protection" ruleset, which requires code-owner
 # approval for those paths.
+#
+# Fork pull requests run the same detection read-only: the result is
+# published in the job summary (no label/comment — the default token is
+# read-only there). The merge gate still applies to fork PRs.
 
 on:
   pull_request:
@@ -20,7 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -30,18 +34,13 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.sha }}
+          IS_FORK: ${{ github.event.pull_request.head.repo.fork }}
         run: |
           set -euo pipefail
 
           git fetch --quiet origin "$BASE_SHA"
           changed="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
           [ -n "$changed" ] || exit 0
-
-          # Idempotently ensure the label exists (fresh repos from this
-          # template do not have it yet).
-          gh label create requires-human-review \
-            --color E99695 --description "Touches trust-boundary files" \
-            --force >/dev/null 2>&1 || true
 
           # Collect changed files matching a configured pattern.
           hits=""
@@ -56,6 +55,33 @@ jobs:
               fi
             done <<< "$changed"
           done < <(sed -E 's/^[[:space:]]*-[[:space:]]*//' .github/trust-boundary.yml | grep -v '^[[:space:]]*$' | grep -v '^#')
+
+          # Fork PRs get a read-only GITHUB_TOKEN: every write below (labels,
+          # pr edit, pr comment) would fail with HTTP 403 under set -e. Keep
+          # the classification visible: publish a read-only result in the
+          # job summary instead.
+          if [ "$IS_FORK" = "true" ]; then
+            {
+              echo "## Trust-boundary classification (fork PR — read-only)"
+              echo ""
+              if [ -n "$hits" ]; then
+                echo "This PR modifies files protected by \`.github/trust-boundary.yml\`:"
+                echo ""
+                echo "$hits"
+                echo ""
+                echo "Human approval from a code owner (see CODEOWNERS) is **required** before merge."
+              else
+                echo "No trust-boundary files touched."
+              fi
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # Idempotently ensure the label exists (fresh repos from this
+          # template do not have it yet).
+          gh label create requires-human-review \
+            --color E99695 --description "Touches trust-boundary files" \
+            --force >/dev/null 2>&1 || true
 
           has_label="$(gh pr view "$PR_NUMBER" --json labels --jq '[.labels[].name] | contains(["requires-human-review"])')"
 

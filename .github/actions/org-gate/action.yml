@@ -1,15 +1,24 @@
 name: 'Org Gate'
 description: >-
   Universal merge gate for ostara-labs repositories: actionlint (digest-pinned)
-  over all workflow files + shellcheck (status-aware) over shell scripts.
+  over all workflow files + shellcheck (status-aware) over shell scripts +
+  incremental secret scanning (gitleaks, trusted-base) on PRs and pushes.
   Centralized here so callers cannot weaken the checks while keeping the
   required status context named exactly "gate".
+
+inputs:
+  base-sha:
+    description: >-
+      Trusted base commit for incremental secret scanning (the PR base SHA,
+      or the push event's `before` SHA). Empty = full-history scan.
+    required: false
+    default: ''
 
 runs:
   using: 'composite'
   steps:
     - name: Checkout
-      uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         persist-credentials: false
 
@@ -49,3 +58,46 @@ runs:
           exit 0
         fi
         exit "$status"
+
+    - name: Install gitleaks (checksum-verified)
+      shell: bash
+      run: |
+        version=8.28.0
+        asset="gitleaks_${version}_linux_x64.tar.gz"
+        curl -sSfL --connect-timeout 10 --max-time 120 -o "$asset" \
+          "https://github.com/gitleaks/gitleaks/releases/download/v${version}/${asset}"
+        curl -sSfL --connect-timeout 10 --max-time 120 -o checksums.txt \
+          "https://github.com/gitleaks/gitleaks/releases/download/v${version}/gitleaks_${version}_checksums.txt"
+        grep "$asset" checksums.txt | sha256sum --check --status -
+        tar -xzf "$asset" gitleaks
+
+    # Incremental range per event. Config + ignore are taken from the
+    # TRUSTED base commit only: a PR cannot whitelist its own secrets via
+    # .gitleaks.toml/.gitleaksignore smuggled in the head tree.
+    - name: Scan for secrets (trusted-base incremental)
+      shell: bash
+      env:
+        BASE_SHA: ${{ inputs.base-sha }}
+      run: |
+        IGNORE=/tmp/gitleaksignore
+        if ! git show "$BASE_SHA:.gitleaksignore" > "$IGNORE" 2>/dev/null; then
+          printf '' > "$IGNORE"
+        fi
+        CONFIG=()
+        if git cat-file -e "$BASE_SHA:.gitleaks.toml" 2>/dev/null; then
+          git show "$BASE_SHA:.gitleaks.toml" > /tmp/gitleaks.toml
+          CONFIG=(--config /tmp/gitleaks.toml)
+        else
+          # no trusted config: forbid head-side autodiscovery override
+          rm -f .gitleaks.toml gitleaks.toml
+        fi
+        LOG_OPTS=()
+        if [ -n "$BASE_SHA" ] && [ "$BASE_SHA" != "0000000000000000000000000000000000000000" ]; then
+          git fetch --quiet origin "$BASE_SHA" 2>/dev/null || true
+          LOG_OPTS=(--log-opts="$BASE_SHA..HEAD")
+        else
+          # no trusted base (e.g. first push): scan everything reachable
+          git fetch --quiet --unshallow 2>/dev/null || true
+        fi
+        ./gitleaks git "${LOG_OPTS[@]}" "${CONFIG[@]}" --verbose --redact \
+          --exit-code 1 --gitleaks-ignore-path "$IGNORE" .
