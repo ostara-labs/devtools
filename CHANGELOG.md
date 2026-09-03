@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.1](https://github.com/ostara-labs/devtools/compare/v1.3.0...v1.3.1) (2026-09-03)
+
+
+### Bug Fixes
+
+* **hooks:** use [[:blank:]] for the trailing-whitespace check ([#14](https://github.com/ostara-labs/devtools/issues/14)) ([e7ba2d4](https://github.com/ostara-labs/devtools/commit/e7ba2d4d10f301d8b70359b5c9709816b7ae55d8))
+
 ## [1.3.0](https://github.com/ostara-labs/devtools/compare/v1.2.0...v1.3.0) (2026-09-03)
 
 
