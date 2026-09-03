@@ -34,9 +34,12 @@ echo "[install] devtools found at: $DEVTOOLS_DIR"
 # --- 1. Configure git hooks ---
 HOOKS_DIR="$DEVTOOLS_DIR/hooks"
 if [ -d "$HOOKS_DIR" ]; then
-  git config core.hooksPath "$HOOKS_DIR"
+  # RELATIVE path (resolved from the worktree root): an absolute path
+  # embeds this machine's clone location and silently dies after the repo
+  # is re-cloned elsewhere. Relative core.hooksPath requires Git >= 2.29.
+  git config core.hooksPath "${HOOKS_DIR#"$REPO_ROOT"/}"
   chmod +x "$HOOKS_DIR"/* 2>/dev/null || true
-  echo "[install] git hooksPath set to: $HOOKS_DIR"
+  echo "[install] git hooksPath set to: ${HOOKS_DIR#"$REPO_ROOT"/}"
 else
   echo "[install] Warning: hooks directory not found at $HOOKS_DIR"
 fi
@@ -99,12 +102,17 @@ copy_config() {
   fi
 }
 
+# Language-specific configs
 if [ "$LANG_TARGET" = "rust" ]; then
   copy_config "clippy.toml" "$REPO_ROOT/clippy.toml"
   copy_config "rustfmt.toml" "$REPO_ROOT/rustfmt.toml"
 elif [ "$LANG_TARGET" = "typescript" ]; then
   copy_config "biome.json" "$REPO_ROOT/biome.json"
 fi
+
+# Org-standard configs, independent of language
+copy_config ".gitleaks.toml" "$REPO_ROOT/.gitleaks.toml"
+copy_config ".coderabbit.yaml" "$REPO_ROOT/.coderabbit.yaml"
 
 # --- Done ---
 echo ""

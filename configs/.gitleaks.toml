@@ -1,0 +1,12 @@
+# gitleaks configuration. Extends the default ruleset.
+# Used by pre-commit and the org gate (trusted-base incremental scanning).
+
+[extend]
+useDefault = true
+
+# Example allowlist — uncomment and adapt to whitelist known test values:
+# [allowlist]
+# description = "Known test values"
+# regexes = [
+#   '''AKIA[0-9A-Z]{16}''',
+# ]

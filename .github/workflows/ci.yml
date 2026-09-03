@@ -4,24 +4,91 @@ name: CI
 # org-wide policy: every repo proves its own health through one aggregate.
 # devtools is itself trust-boundary: ALL PRs additionally require human
 # review (see trust-boundary-protect.yml).
+#
+# This workflow is ALSO the org-wide aggregate: consumer repos call it with
+# a one-line job named `gate`, exposing exactly six required contexts:
+#   gate / core, gate / rust, gate / elixir, gate / typescript, gate / python,
+#   gate / gate
+# Stack jobs report "skipped" when the language is absent — skipped required
+# checks satisfy org rulesets, so ONE ruleset fits every repo. Renaming the
+# caller job makes the required contexts never report: merge blocks loudly.
+# Internal references are local (./) — the caller pins THIS workflow's digest.
 
 on:
   push:
     branches: [main]
   pull_request:
+  workflow_call:
+    inputs:
+      stack-dir:
+        description: "Base directory containing stack manifests. Empty = each language workflow's own default (rust/, typescript/, elixir/, python/). Use '.' for single-stack repos with manifests at the root."
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: read
 
 jobs:
-  gate:
-    name: gate
+  # actionlint + shellcheck + trusted-base secret scanning (org-gate v2).
+  # The last step is devtools-specific (extensionless git hooks are outside
+  # the composite's *.sh discovery) and is a silent no-op in consumer repos
+  # (no hooks/ directory at their root).
+  core:
+    name: core
     runs-on: ubuntu-24.04
     steps:
-      - uses: ostara-labs/devtools/.github/actions/org-gate@4364455c3e2e74ebab2d0c113673d9e75e111f7f # v1.1.1
+      # Checkout required BEFORE the local composite reference: `uses: ./`
+      # resolves against the workspace, not the repo (remote references
+      # don't need this; a local action does).
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      # devtools-specific: extensionless git hooks are outside the
-      # composite's *.sh discovery.
+      - uses: ./.github/actions/org-gate
+        with:
+          base-sha: ${{ github.event.pull_request.base.sha || github.event.before }}
+
       - name: Shellcheck extensionless hooks
         shell: bash
         run: find hooks -maxdepth 1 -type f -print0 | xargs -0 -r shellcheck -s bash
+
+  rust:
+    uses: ./.github/workflows/rust-ci.yml
+    with:
+      stack-dir: ${{ inputs['stack-dir'] != '' && inputs['stack-dir'] || 'rust' }}
+  elixir:
+    uses: ./.github/workflows/elixir-ci.yml
+    with:
+      stack-dir: ${{ inputs['stack-dir'] != '' && inputs['stack-dir'] || 'elixir' }}
+  typescript:
+    uses: ./.github/workflows/typescript-ci.yml
+    with:
+      stack-dir: ${{ inputs['stack-dir'] != '' && inputs['stack-dir'] || 'typescript' }}
+  python:
+    uses: ./.github/workflows/python-ci.yml
+    with:
+      stack-dir: ${{ inputs['stack-dir'] != '' && inputs['stack-dir'] || 'python' }}
+
+  # Universal merge gate: every repository consuming devtools exposes
+  # exactly this context to the org ruleset. Composition may evolve; the
+  # contract ("gate green = mergeable") does not.
+  gate:
+    name: gate
+    needs: [core, rust, elixir, typescript, python]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify all gates passed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "needs results: $RESULTS"
+          for result in $RESULTS; do
+            if [ "$result" != "success" ]; then
+              echo "::error::gate did not succeed: $result"
+              exit 1
+            fi
+          done
+          echo "all gates passed"

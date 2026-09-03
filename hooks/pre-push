@@ -51,6 +51,13 @@ fi
 
 cd "$REPO_ROOT"
 
+# --- Push-from-main guard (absorbed from the org's former pre-commit
+# framework config "no-commit-to-branch") ---
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
+if [ "$BRANCH" = "main" ]; then
+  fail "pushing directly from 'main' is not allowed — work on a feature branch."
+fi
+
 # --- Rust checks ---
 if [ "$HAS_RUST" = true ]; then
   if ! command -v cargo &>/dev/null; then
