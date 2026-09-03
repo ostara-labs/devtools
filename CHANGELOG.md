@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.2](https://github.com/ostara-labs/devtools/compare/v1.3.1...v1.3.2) (2026-09-03)
+
+
+### Bug Fixes
+
+* **ci:** pin org-gate by digest in the aggregate (cross-repo callers) ([#16](https://github.com/ostara-labs/devtools/issues/16)) ([7ee02c3](https://github.com/ostara-labs/devtools/commit/7ee02c3cd70577ef1ea4cbf7c74f6c40ffe04dc9))
+
 ## [1.3.1](https://github.com/ostara-labs/devtools/compare/v1.3.0...v1.3.1) (2026-09-03)
 
 
