@@ -1,19 +1,18 @@
-name: Python CI
+﻿name: Python CI
 
 on:
   workflow_call:
-    inputs:
-      postgis-image:
-        description: "PostGIS docker image for DB-backed tests (empty = skip the database job)"
-        required: false
-        type: string
-        default: ""
     inputs:
       stack-dir:
         description: "Directory containing this stack's manifest (Cargo.toml / package.json / mix.exs / pyproject.toml)"
         required: false
         type: string
         default: "python"
+      postgis-image:
+        description: "PostGIS docker image for DB-backed tests (empty = skip the database job)"
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -71,12 +70,17 @@ jobs:
         run: uv run --directory "$STACK_DIR" pytest
 
   # DB-backed test run for repos that opt in via the postgis-image input.
-  # The service uses the postgres image's default credentials and exports
-  # a generic CI_DATABASE_URL; the repo's conftest decides how to consume
-  # it. Non-PostGIS repos pay zero cost (job is skipped, nothing pulled).
+  # Services use the images' default credentials and export generic
+  # CI_DATABASE_URL / CI_REDIS_URL vars; the repo's conftest decides how
+  # to consume them. Non-PostGIS repos pay zero cost (job is skipped,
+  # nothing pulled).
   test-postgis:
     if: inputs.postgis-image != ''
     runs-on: ubuntu-24.04
+    env:
+      STACK_DIR: ${{ inputs['stack-dir'] }}
+      CI_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/postgres
+      CI_REDIS_URL: redis://localhost:6379/0
     services:
       postgis:
         image: ${{ inputs.postgis-image }}
@@ -92,8 +96,13 @@ jobs:
           --health-timeout 5s
           --health-retries 20
           --health-start-period 10s
-    env:
-      CI_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/postgres
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
     steps:
       - name: Harden runner
         uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2
@@ -114,7 +123,7 @@ jobs:
           enable-cache: false
 
       - name: Sync dependencies
-        run: uv sync --directory python
+        run: uv sync --directory "$STACK_DIR"
 
       # The image ships the extension binaries but does not register the
       # extension in every database on every tag - never rely on that.
@@ -126,4 +135,4 @@ jobs:
             -c "CREATE EXTENSION IF NOT EXISTS postgis"
 
       - name: Test against PostGIS
-        run: uv run --directory python pytest
+        run: uv run --directory "$STACK_DIR" pytest
