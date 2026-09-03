@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.3](https://github.com/ostara-labs/devtools/compare/v1.3.2...v1.3.3) (2026-09-03)
+
+
+### Bug Fixes
+
+* **ci:** guard the extensionless-hooks shellcheck step ([#18](https://github.com/ostara-labs/devtools/issues/18)) ([4d120df](https://github.com/ostara-labs/devtools/commit/4d120df14be6b98da161625e6b45a57e9c5ae725))
+
 ## [1.3.2](https://github.com/ostara-labs/devtools/compare/v1.3.1...v1.3.2) (2026-09-03)
 
 
