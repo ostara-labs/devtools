@@ -5,58 +5,67 @@
 # Overridable variables:
 #   TS_DIR ?= typescript
 #
-# Note: run pnpm from inside typescript/ — corepack resolves the pinned
-# version per directory (running from the repo root resolves latest).
+# Package-manager detection (mirrors the CI contract in typescript-ci.yml):
+#   pnpm-lock.yaml    -> pnpm (the template convention)
+#   package-lock.json -> npm  (repos predating the template)
+#   neither           -> pnpm
+# npm-managed repos run `npm ci` and `npm run <target>`; pnpm-managed
+# repos keep `pnpm install --frozen-lockfile` and `pnpm run <target>`.
 
 TS_DIR ?= typescript
+TS_PM := $(if $(wildcard $(TS_DIR)/pnpm-lock.yaml),pnpm,$(if $(wildcard $(TS_DIR)/package-lock.json),npm,pnpm))
+TS_RUN := $(if $(filter npm,$(TS_PM)),npm run,pnpm run)
+TS_INSTALL_CMD := $(if $(filter npm,$(TS_PM)),npm ci,pnpm install --frozen-lockfile)
 
 .PHONY: deps-typescript format-typescript lint-typescript test-typescript build-typescript clean-typescript
 
 ##@ TypeScript
 
-deps-typescript: ## Install TypeScript packages (pnpm install --frozen-lockfile)
+deps-typescript: ## Install TypeScript packages (pnpm/npm per lockfile)
 	@if [ ! -f $(TS_DIR)/package.json ]; then \
 		echo "[deps-typescript] skipped (no $(TS_DIR)/package.json)"; \
+	elif [ "$(TS_PM)" = "npm" ]; then \
+		cd $(TS_DIR) && $(TS_INSTALL_CMD); \
 	elif ! command -v pnpm >/dev/null 2>&1; then \
 		echo "[deps-typescript] skipped (pnpm not installed)"; \
 	else \
-		cd $(TS_DIR) && pnpm install --frozen-lockfile; \
+		cd $(TS_DIR) && $(TS_INSTALL_CMD); \
 	fi
 
 format-typescript: ## Format TypeScript code (biome format --write)
 	@if [ ! -f $(TS_DIR)/package.json ]; then \
 		echo "[format-typescript] skipped (no $(TS_DIR)/package.json)"; \
-	elif ! command -v pnpm >/dev/null 2>&1; then \
-		echo "[format-typescript] skipped (pnpm not installed)"; \
+	elif ! command -v $(firstword $(TS_RUN)) >/dev/null 2>&1; then \
+		echo "[format-typescript] skipped ($(firstword $(TS_RUN)) not installed)"; \
 	else \
-		cd $(TS_DIR) && pnpm run format; \
+		cd $(TS_DIR) && $(TS_RUN) format; \
 	fi
 
 lint-typescript: ## Lint TypeScript code (biome check + tsc --noEmit)
 	@if [ ! -f $(TS_DIR)/package.json ]; then \
 		echo "[lint-typescript] skipped (no $(TS_DIR)/package.json)"; \
-	elif ! command -v pnpm >/dev/null 2>&1; then \
-		echo "[lint-typescript] skipped (pnpm not installed)"; \
+	elif ! command -v $(firstword $(TS_RUN)) >/dev/null 2>&1; then \
+		echo "[lint-typescript] skipped ($(firstword $(TS_RUN)) not installed)"; \
 	else \
-		cd $(TS_DIR) && pnpm run lint && pnpm run typecheck; \
+		cd $(TS_DIR) && $(TS_RUN) lint && $(TS_RUN) typecheck; \
 	fi
 
 test-typescript: ## Test TypeScript code (vitest run)
 	@if [ ! -f $(TS_DIR)/package.json ]; then \
 		echo "[test-typescript] skipped (no $(TS_DIR)/package.json)"; \
-	elif ! command -v pnpm >/dev/null 2>&1; then \
-		echo "[test-typescript] skipped (pnpm not installed)"; \
+	elif ! command -v $(firstword $(TS_RUN)) >/dev/null 2>&1; then \
+		echo "[test-typescript] skipped ($(firstword $(TS_RUN)) not installed)"; \
 	else \
-		cd $(TS_DIR) && pnpm run test; \
+		cd $(TS_DIR) && $(TS_RUN) test; \
 	fi
 
 build-typescript: ## Build TypeScript (tsc -p tsconfig.build.json)
 	@if [ ! -f $(TS_DIR)/package.json ]; then \
 		echo "[build-typescript] skipped (no $(TS_DIR)/package.json)"; \
-	elif ! command -v pnpm >/dev/null 2>&1; then \
-		echo "[build-typescript] skipped (pnpm not installed)"; \
+	elif ! command -v $(firstword $(TS_RUN)) >/dev/null 2>&1; then \
+		echo "[build-typescript] skipped ($(firstword $(TS_RUN)) not installed)"; \
 	else \
-		cd $(TS_DIR) && pnpm run build; \
+		cd $(TS_DIR) && $(TS_RUN) build; \
 	fi
 
 clean-typescript: ## Remove TypeScript artifacts (node_modules, dist, coverage)
