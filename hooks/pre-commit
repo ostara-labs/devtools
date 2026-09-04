@@ -34,7 +34,16 @@
 set -euo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
-STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep -v '^$' || true)
+
+# NUL-delimited staged file list — safe for paths with spaces, glob chars, etc.
+# R included: a staged RENAME destination keeps .env/secret coverage.
+# read -d '' loop (not mapfile -d): mapfile -d needs Bash 4.4+; macOS still
+# ships Bash 3.2, where this hook would die before validating anything.
+STAGED_FILES=()
+while IFS= read -r -d ''; do
+  STAGED_FILES+=("$REPLY")
+done < <(git diff --cached --name-only --diff-filter=ACMR -z)
+
 EXIT_CODE=0
 
 # Colors
@@ -55,7 +64,7 @@ HAS_RUST=false; HAS_ELIXIR=false; HAS_TS=false
 [ -f "$REPO_ROOT/package.json" ] && HAS_TS=true
 
 # --- Nothing staged? Skip ---
-if [ -z "$STAGED_FILES" ]; then
+if [ ${#STAGED_FILES[@]} -eq 0 ]; then
   exit 0
 fi
 
@@ -70,8 +79,9 @@ SECRET_PATTERNS=(
   'AIza[0-9A-Za-z\-_]{35}'
 )
 
-for file in $STAGED_FILES; do
-  if file "$REPO_ROOT/$file" 2>/dev/null | grep -qi 'text\|json\|yaml\|xml\|empty'; then
+for file in "${STAGED_FILES[@]}"; do
+  # Read from the index snapshot (staged blob), not the worktree.
+  if git show ":$file" 2>/dev/null | file - 2>/dev/null | grep -qi 'text\|json\|yaml\|xml\|empty'; then
     # Skip test files — they contain fake secrets to test the sanitizer
     # (e.g., ghp_1234... in sanitizer_tests.rs). Real secrets in test files
     # are caught by code review (trust-boundary PRs require HITL).
@@ -79,7 +89,7 @@ for file in $STAGED_FILES; do
       continue
     fi
     for pattern in "${SECRET_PATTERNS[@]}"; do
-      if grep -nE "$pattern" "$REPO_ROOT/$file" 2>/dev/null; then
+      if git show ":$file" 2>/dev/null | grep -nE "$pattern" 2>/dev/null; then
         fail "Potential secret detected in $file (pattern: $pattern)"
       fi
     done
@@ -87,7 +97,7 @@ for file in $STAGED_FILES; do
 done
 
 # --- 2. No .env files ---
-for file in $STAGED_FILES; do
+for file in "${STAGED_FILES[@]}"; do
   if [[ "$file" == ".env" || "$file" == ".env."* || "$file" == *"/.env" || "$file" == *"/.env."* ]]; then
     fail ".env file in staging: $file — use .env.example, add .env to .gitignore"
   fi
@@ -97,20 +107,15 @@ done
 check_file_size() {
   local file="$1"
   local comment_prefix="$2"
-  local filepath="$REPO_ROOT/$file"
-  [ ! -f "$filepath" ] && return
   local pure_loc
-  # Count lines that are neither blank nor comments.
-  # Uses grep -v (invert) instead of awk to avoid delimiter conflicts:
-  # awk's regex delimiter is /, so comment_prefix="//" (Rust) breaks awk
-  # with "unexpected newline". grep -E treats / as a literal character.
-  pure_loc=$(grep -cvE "^[[:space:]]*$|^[[:space:]]*${comment_prefix}" "$filepath" || true)
+  # Read from the index snapshot, not the worktree.
+  pure_loc=$(git show ":$file" 2>/dev/null | grep -cvE "^[[:space:]]*$|^[[:space:]]*${comment_prefix}" || true)
   if [ "$pure_loc" -gt 250 ]; then
     fail "$file is ${pure_loc} pure LOC (max 250). Split by responsibility or mark with SIZE_OK."
   fi
 }
 
-for file in $STAGED_FILES; do
+for file in "${STAGED_FILES[@]}"; do
   case "$file" in
     *.rs)   check_file_size "$file" '//' ;;
     *.ex)   check_file_size "$file" '#' ;;
@@ -142,7 +147,7 @@ infra/
 fi
 
 TB_HIT=false
-for file in $STAGED_FILES; do
+for file in "${STAGED_FILES[@]}"; do
   while IFS= read -r pattern; do
     [ -z "$pattern" ] && continue
     if [[ "$file" == "$pattern"* ]]; then
@@ -156,14 +161,14 @@ done
 # Flag .unwrap()/.expect() occurrences that sit outside the file's first
 # #[cfg(test)] block. Test files never reach this (is_test_file skips them).
 check_rust_cmd() {
-  local cmd="$1" lines="$2" file="$3" filepath="$4"
+  local cmd="$1" lines="$2" file="$3" content="$4"
   [ -z "$lines" ] && return 0
   local cfg_test_count cfg_test_line before_cfg
-  cfg_test_count=$(grep -c '#\[cfg(test)\]' "$filepath" || true)
+  cfg_test_count=$(printf '%s\n' "$content" | grep -c '#\[cfg(test)\]' || true)
   if [ "$cfg_test_count" -eq 0 ]; then
     fail "$file contains .$cmd() outside tests. Use ? with context.\n$lines"
   else
-    cfg_test_line=$(grep -n '#\[cfg(test)\]' "$filepath" | head -1 | cut -d: -f1)
+    cfg_test_line=$(printf '%s\n' "$content" | grep -n '#\[cfg(test)\]' | head -1 | cut -d: -f1)
     before_cfg=$(echo "$lines" | awk -F: -v cfg_line="$cfg_test_line" '$1 < cfg_line {print}')
     if [ -n "$before_cfg" ]; then
       fail "$file contains .$cmd() outside #[cfg(test)]. Use ? with context.\n$before_cfg"
@@ -173,12 +178,17 @@ check_rust_cmd() {
 
 # --- 5-8. Rust-specific checks ---
 if [ "$HAS_RUST" = true ]; then
-  RUST_FILES=$(echo "$STAGED_FILES" | grep '\.rs$' || true)
+  # Filter to .rs files using NUL-safe array operation.
+  RUST_FILES=()
+  for f in "${STAGED_FILES[@]}"; do
+    [[ "$f" == *.rs ]] && RUST_FILES+=("$f")
+  done
 
-  if [ -n "$RUST_FILES" ]; then
-    for file in $RUST_FILES; do
-      filepath="$REPO_ROOT/$file"
-      [ ! -f "$filepath" ] && continue
+  if [ ${#RUST_FILES[@]} -gt 0 ]; then
+    for file in "${RUST_FILES[@]}"; do
+      # Read staged content once — all Rust checks use this snapshot.
+      content=$(git show ":$file" 2>/dev/null || true)
+      [ -z "$content" ] && continue
 
       is_test_file=false
       # Test-file detection must match the secrets-skip block in check 1:
@@ -195,28 +205,28 @@ if [ "$HAS_RUST" = true ]; then
       # `cut -d: -f2-` strips the "NNN:" number from every line after the
       # first, silently breaking the cfg(test) position check below.
       if [ "$is_test_file" = false ]; then
-        unwrap_lines=$(grep -n '\.unwrap()' "$filepath" 2>/dev/null || true)
-        expect_lines=$(grep -n '\.expect(' "$filepath" 2>/dev/null || true)
-        check_rust_cmd unwrap "$unwrap_lines" "$file" "$filepath"
-        check_rust_cmd expect "$expect_lines" "$file" "$filepath"
+        unwrap_lines=$(printf '%s\n' "$content" | grep -n '\.unwrap()' 2>/dev/null || true)
+        expect_lines=$(printf '%s\n' "$content" | grep -n '\.expect(' 2>/dev/null || true)
+        check_rust_cmd unwrap "$unwrap_lines" "$file" "$content"
+        check_rust_cmd expect "$expect_lines" "$file" "$content"
       fi
 
       # 6. println!/eprintln! outside main.rs
       if [[ "$file" != "src/main.rs" && "$file" != *"/main.rs" ]]; then
-        println_lines=$(grep -n 'println!\|eprintln!' "$filepath" 2>/dev/null || true)
+        println_lines=$(printf '%s\n' "$content" | grep -n 'println!\|eprintln!' 2>/dev/null || true)
         if [ -n "$println_lines" ]; then
           fail "$file contains println!/eprintln! — use tracing instead.\n$println_lines"
         fi
       fi
 
       # 7. unsafe without // SAFETY: comment
-      unsafe_lines=$(grep -n 'unsafe' "$filepath" 2>/dev/null | grep -v '// SAFETY:' || true)
+      unsafe_lines=$(printf '%s\n' "$content" | grep -n 'unsafe' 2>/dev/null | grep -v '// SAFETY:' || true)
       if [ -n "$unsafe_lines" ]; then
         while IFS= read -r line; do
           line_num=$(echo "$line" | cut -d: -f1)
           prev_line=$((line_num - 1))
           if [ "$prev_line" -gt 0 ]; then
-            prev_content=$(sed -n "${prev_line}p" "$filepath" 2>/dev/null || true)
+            prev_content=$(printf '%s\n' "$content" | sed -n "${prev_line}p" 2>/dev/null || true)
             if echo "$prev_content" | grep -q '// SAFETY:'; then
               continue
             fi
@@ -240,16 +250,20 @@ fi
 
 # --- 9-10. Elixir-specific checks ---
 if [ "$HAS_ELIXIR" = true ]; then
-  EX_FILES=$(echo "$STAGED_FILES" | grep -E '\.(ex|exs)$' || true)
+  EX_FILES=()
+  for f in "${STAGED_FILES[@]}"; do
+    [[ "$f" == *.ex || "$f" == *.exs ]] && EX_FILES+=("$f")
+  done
 
-  if [ -n "$EX_FILES" ]; then
-    for file in $EX_FILES; do
-      filepath="$REPO_ROOT/$file"
-      [ ! -f "$filepath" ] && continue
+  if [ ${#EX_FILES[@]} -gt 0 ]; then
+    for file in "${EX_FILES[@]}"; do
+      # Read staged content once.
+      content=$(git show ":$file" 2>/dev/null || true)
+      [ -z "$content" ] && continue
 
       # 9. IO.puts/IO.inspect in production files (lib/, not test/)
       if [[ "$file" == lib/* ]]; then
-        io_lines=$(grep -n 'IO\.puts\|IO\.inspect' "$filepath" 2>/dev/null || true)
+        io_lines=$(printf '%s\n' "$content" | grep -n 'IO\.puts\|IO\.inspect' 2>/dev/null || true)
         if [ -n "$io_lines" ]; then
           fail "$file contains IO.puts/IO.inspect in production code — use Logger.\n$io_lines"
         fi
@@ -267,16 +281,20 @@ fi
 
 # --- 11-12. TypeScript-specific checks ---
 if [ "$HAS_TS" = true ]; then
-  TS_FILES=$(echo "$STAGED_FILES" | grep -E '\.(ts|tsx)$' || true)
+  TS_FILES=()
+  for f in "${STAGED_FILES[@]}"; do
+    [[ "$f" == *.ts || "$f" == *.tsx ]] && TS_FILES+=("$f")
+  done
 
-  if [ -n "$TS_FILES" ]; then
-    for file in $TS_FILES; do
-      filepath="$REPO_ROOT/$file"
-      [ ! -f "$filepath" ] && continue
+  if [ ${#TS_FILES[@]} -gt 0 ]; then
+    for file in "${TS_FILES[@]}"; do
+      # Read staged content once.
+      content=$(git show ":$file" 2>/dev/null || true)
+      [ -z "$content" ] && continue
 
       # 11. console.log in production files (src/, not test/)
       if [[ "$file" == src/* && "$file" != *"test."* && "$file" != *"spec."* ]]; then
-        console_lines=$(grep -n 'console\.log' "$filepath" 2>/dev/null || true)
+        console_lines=$(printf '%s\n' "$content" | grep -n 'console\.log' 2>/dev/null || true)
         if [ -n "$console_lines" ]; then
           fail "$file contains console.log in production code — use a logger.\n$console_lines"
         fi
@@ -295,43 +313,40 @@ fi
 # --- 13-18. File hygiene (absorbed from the org's former pre-commit
 # framework config; consolidated here so ONE hook mechanism exists) ---
 
-# 13. Trailing whitespace (markdown excluded: trailing double spaces are
-#     hard line breaks there)
-for file in $STAGED_FILES; do
-  case "$file" in
-    *.md) continue ;;
-  esac
-  filepath="$REPO_ROOT/$file"
-  [ ! -f "$filepath" ] && continue
-  if file "$filepath" 2>/dev/null | grep -qi 'text\|json\|yaml\|xml\|empty'; then
-    # POSIX bracket classes only: '[ \t]' does NOT mean space+tab in grep —
-    # backslash is literal inside [], so the class matched space, backslash
-    # or the letter 't', flagging every line ending in 't' (e.g. "rust").
-    ws_lines=$(grep -nE '[[:blank:]]+$' "$filepath" 2>/dev/null || true)
-    if [ -n "$ws_lines" ]; then
-      fail "$file has trailing whitespace.\n$ws_lines"
+  # 13. Trailing whitespace (markdown excluded: trailing double spaces are
+  #     hard line breaks there)
+  #     CRLF-safe: ${cr} is a literal carriage return — grep -E's \r escape
+  #     is not portable across grep versions (GNU grep 3.8+ warns).
+  for file in "${STAGED_FILES[@]}"; do
+    case "$file" in
+      *.md) continue ;;
+    esac
+    # Read from the index snapshot (staged blob), not the worktree.
+    if git show ":$file" 2>/dev/null | file - 2>/dev/null | grep -qi 'text\|json\|yaml\|xml\|empty'; then
+      cr=$'\r'
+      ws_lines=$(git show ":$file" 2>/dev/null | grep -nE "[[:blank:]]+${cr}?\$" 2>/dev/null || true)
+      if [ -n "$ws_lines" ]; then
+        fail "$file has trailing whitespace.\n$ws_lines"
+      fi
     fi
-  fi
-done
+  done
 
 # 14. Files end with a newline
-for file in $STAGED_FILES; do
-  filepath="$REPO_ROOT/$file"
-  [ ! -f "$filepath" ] && continue
-  [ ! -s "$filepath" ] && continue
-  if file "$filepath" 2>/dev/null | grep -qi 'text\|json\|yaml\|xml\|empty'; then
-    if [ "$(tail -c 1 "$filepath" | wc -l)" -eq 0 ]; then
+for file in "${STAGED_FILES[@]}"; do
+  # Read from the index snapshot; skip empty blobs.
+  staged_size=$(git show ":$file" 2>/dev/null | wc -c | tr -d ' ' || echo 0)
+  [ "$staged_size" -eq 0 ] && continue
+  if git show ":$file" 2>/dev/null | file - 2>/dev/null | grep -qi 'text\|json\|yaml\|xml\|empty'; then
+    if [ "$(git show ":$file" 2>/dev/null | tail -c 1 | wc -l)" -eq 0 ]; then
       fail "$file does not end with a newline."
     fi
   fi
 done
 
 # 15. Unresolved merge conflict markers
-for file in $STAGED_FILES; do
-  filepath="$REPO_ROOT/$file"
-  [ ! -f "$filepath" ] && continue
-  if file "$filepath" 2>/dev/null | grep -qi 'text\|json\|yaml\|xml\|empty'; then
-    conflict_lines=$(grep -nE '^(<{7} |={7}$|>{7} )' "$filepath" 2>/dev/null || true)
+for file in "${STAGED_FILES[@]}"; do
+  if git show ":$file" 2>/dev/null | file - 2>/dev/null | grep -qi 'text\|json\|yaml\|xml\|empty'; then
+    conflict_lines=$(git show ":$file" 2>/dev/null | grep -nE '^(<{7} |={7}$|>{7} )' 2>/dev/null || true)
     if [ -n "$conflict_lines" ]; then
       fail "$file contains unresolved merge conflict markers.\n$conflict_lines"
     fi
@@ -339,10 +354,8 @@ for file in $STAGED_FILES; do
 done
 
 # 16. Large staged files (> 500 KB) — Git LFS or split territory
-for file in $STAGED_FILES; do
-  filepath="$REPO_ROOT/$file"
-  [ ! -f "$filepath" ] && continue
-  size_bytes=$(wc -c < "$filepath" 2>/dev/null || echo 0)
+for file in "${STAGED_FILES[@]}"; do
+  size_bytes=$(git show ":$file" 2>/dev/null | wc -c | tr -d ' ' || echo 0)
   if [ "$size_bytes" -gt 512000 ]; then
     fail "$file is $((size_bytes / 1024)) KB (max 500 KB). Use Git LFS or split the file."
   fi
@@ -352,23 +365,25 @@ done
 # unavailable — CI runs actionlint/yamllint-style checks regardless)
 PY="$(command -v python3 || command -v python || true)"
 if [ -n "$PY" ]; then
-  YAML_FILES=$(echo "$STAGED_FILES" | grep -E '\.ya?ml$' || true)
-  if [ -n "$YAML_FILES" ] && "$PY" -c 'import yaml' 2>/dev/null; then
-    for file in $YAML_FILES; do
-      filepath="$REPO_ROOT/$file"
-      [ ! -f "$filepath" ] && continue
-      if ! "$PY" -c "import sys, yaml; yaml.safe_load(open(sys.argv[1], encoding='utf-8'))" "$filepath" 2>/dev/null; then
+  YAML_FILES=()
+  for f in "${STAGED_FILES[@]}"; do
+    [[ "$f" == *.yml || "$f" == *.yaml ]] && YAML_FILES+=("$f")
+  done
+  if [ ${#YAML_FILES[@]} -gt 0 ] && "$PY" -c 'import yaml' 2>/dev/null; then
+    for file in "${YAML_FILES[@]}"; do
+      if ! git show ":$file" 2>/dev/null | "$PY" -c "import sys, yaml; yaml.safe_load(sys.stdin)" 2>/dev/null; then
         fail "$file is not valid YAML."
       fi
     done
   fi
 
-  TOML_FILES=$(echo "$STAGED_FILES" | grep -E '\.toml$' || true)
-  if [ -n "$TOML_FILES" ] && "$PY" -c 'import tomllib' 2>/dev/null; then
-    for file in $TOML_FILES; do
-      filepath="$REPO_ROOT/$file"
-      [ ! -f "$filepath" ] && continue
-      if ! "$PY" -c "import sys, tomllib; tomllib.load(open(sys.argv[1], 'rb'))" "$filepath" 2>/dev/null; then
+  TOML_FILES=()
+  for f in "${STAGED_FILES[@]}"; do
+    [[ "$f" == *.toml ]] && TOML_FILES+=("$f")
+  done
+  if [ ${#TOML_FILES[@]} -gt 0 ] && "$PY" -c 'import tomllib' 2>/dev/null; then
+    for file in "${TOML_FILES[@]}"; do
+      if ! git show ":$file" 2>/dev/null | "$PY" -c "import sys, tomllib; tomllib.load(sys.stdin.buffer)" 2>/dev/null; then
         fail "$file is not valid TOML."
       fi
     done
