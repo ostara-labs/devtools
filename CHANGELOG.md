@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.2](https://github.com/ostara-labs/devtools/compare/v1.4.1...v1.4.2) (2026-09-04)
+
+
+### Bug Fixes
+
+* **makefile:** detect npm vs pnpm in the typescript stack ([#25](https://github.com/ostara-labs/devtools/issues/25)) ([063b98a](https://github.com/ostara-labs/devtools/commit/063b98a8c335d32eb06637bfd36477aff9d89869))
+
 ## [1.4.1](https://github.com/ostara-labs/devtools/compare/v1.4.0...v1.4.1) (2026-09-04)
 
 
