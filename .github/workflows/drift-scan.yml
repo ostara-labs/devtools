@@ -32,7 +32,11 @@ jobs:
     steps:
       - name: Scan org repos for devtools drift
         env:
-          GH_TOKEN: ${{ secrets.ORG_AUDIT_TOKEN || secrets.GITHUB_TOKEN }}
+          # Read-only PAT: enumerates the org. Issue writes use github.token
+          # via the ISSUE_TOKEN override below — a read-scoped PAT cannot
+          # write, and issues: write does not extend to the PAT.
+          GH_TOKEN: ${{ secrets.ORG_AUDIT_TOKEN }}
+          ISSUE_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
@@ -69,9 +73,29 @@ jobs:
           drift=0
           mapfile -t repos < <(gh api "/orgs/$ORG/repos" --paginate --jq '.[].name')
 
+          resolve_ref() {
+            # $1 = revision (digest, tag, or branch); echoes the commit SHA.
+            # Unresolvable revisions return 1 — drift by policy (floating
+            # pins defeat the digest-pinning convention).
+            if echo "$1" | grep -qE '^[0-9a-f]{40}$'; then
+              echo "$1"
+              return 0
+            fi
+            local obj_type obj_sha
+            if ! obj_type=$(gh api "repos/$SELF_REPO/git/ref/tags/$1" --jq .object.type 2>/dev/null); then
+              return 1
+            fi
+            obj_sha=$(gh api "repos/$SELF_REPO/git/ref/tags/$1" --jq .object.sha)
+            if [ "$obj_type" = "tag" ]; then
+              gh api "repos/$SELF_REPO/git/tags/$obj_sha" --jq .object.sha
+            else
+              echo "$obj_sha"
+            fi
+          }
+
           for repo in "${repos[@]}"; do
             short="${repo#*/}"
-            if [ "$repo" = "$SELF_REPO" ]; then
+            if [ "$ORG/$repo" = "$SELF_REPO" ]; then
               echo "| $short | — | — | SELF |" >> "$SUMMARY"
               continue
             fi
@@ -87,24 +111,33 @@ jobs:
             for wf in $wf_files; do
               wf_refs=$(gh api "repos/$ORG/$repo/contents/$wf" --jq .content 2>/dev/null \
                 | base64 -d 2>/dev/null \
-                | grep -oE 'ostara-labs/devtools/[^ @]+@[0-9a-f]{40}' \
-                | grep -oE '[0-9a-f]{40}$' || true)
+                | grep -oE 'ostara-labs/devtools/[^ @]+@[^ @]+' \
+                | sed 's/.*@//' || true)
               refs="$refs $wf_refs"
             done
 
             stale=""
+            floating=0
             if [ -n "$submodule_sha" ] && [ "$submodule_sha" != "$expected_sha" ]; then
               stale="submodule"
             fi
             for ref in $refs; do
-              if [ "$ref" != "$expected_sha" ]; then
-                stale="$stale workflow-ref"
+              echo "$ref" | grep -qE '^[0-9a-f]{40}$' || floating=$((floating + 1))
+              if ! ref_sha=$(resolve_ref "$ref"); then
+                stale="$stale unresolved-ref($ref)"
+                continue
+              fi
+              if [ "$ref_sha" != "$expected_sha" ]; then
+                stale="$stale workflow-ref($ref)"
                 break
               fi
             done
 
             if [ -z "$submodule_sha" ] && [ -z "$(echo "$refs" | tr -d ' ')" ]; then
               status="NOT CONSUMING"
+            elif [ "$floating" -gt 0 ]; then
+              status="FLOATING PIN ($floating)"
+              drift=$((drift + 1))
             elif [ -n "$stale" ]; then
               status="BEHIND ($stale)"
               drift=$((drift + 1))
@@ -122,16 +155,16 @@ jobs:
           echo "**Drift count: $drift**" >> "$SUMMARY"
 
           # --- rolling tracking issue in this repository ---
-          issue_number=$(gh api "search/issues?q=repo:$SELF_REPO+is:issue+is:open+conformance+drift+in:title" --jq '.items[0].number // empty' || true)
+          issue_number=$(GH_TOKEN="$ISSUE_TOKEN" gh api "search/issues?q=repo:$SELF_REPO+is:issue+is:open+conformance+drift+in:title" --jq '.items[0].number // empty' || true)
           {
             echo "Weekly conformance audit — drift count: **$drift** (reference: \`$expected_tag\`)."
             echo ""
             cat "$SUMMARY"
           } >> "$BODY_FILE"
           if [ -n "$issue_number" ]; then
-            gh api -X PATCH "repos/$SELF_REPO/issues/$issue_number" -F body=@"$BODY_FILE" --jq .number
+            GH_TOKEN="$ISSUE_TOKEN" gh api -X PATCH "repos/$SELF_REPO/issues/$issue_number" -F body=@"$BODY_FILE" --jq .number
           else
-            gh api "repos/$SELF_REPO/issues" -f title="Conformance drift report" -F body=@"$BODY_FILE" --jq .number
+            GH_TOKEN="$ISSUE_TOKEN" gh api "repos/$SELF_REPO/issues" -f title="Conformance drift report" -F body=@"$BODY_FILE" --jq .number
           fi
 
           if [ "$drift" -gt 0 ]; then

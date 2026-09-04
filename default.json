@@ -1,0 +1,26 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "git-submodules": {
+    "enabled": true
+  },
+  "github-actions": {
+    "enabled": true
+  },
+  "packageRules": [
+    {
+      "description": "devtools submodule bumps: automerge — every devtools change is human-reviewed at the source repo, propagation is mechanical. Scoped to the .devtools submodule path so unrelated submodules never automerge.",
+      "matchManagers": ["git-submodules"],
+      "matchDepNames": [".devtools"],
+      "automerge": true,
+      "automergeType": "pr"
+    },
+    {
+      "description": "devtools workflow digest bumps: automerge — same trust model. The trailing slash in the matcher excludes lookalike repos (devtools-fork).",
+      "matchManagers": ["github-actions"],
+      "matchDepNames": ["/^ostara-labs\\/devtools\\//"],
+      "automerge": true,
+      "automergeType": "pr"
+    }
+  ]
+}
