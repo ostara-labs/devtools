@@ -44,7 +44,7 @@ jobs:
 
 Updates: `make devtools-update` + move the caller `@SHA` to the matching tag commit — or let Renovate do it (automerge; every devtools change is human-reviewed at the source).
 
-> **Deprecated:** The old curl bootstrap without submodule (`curl -sSL .../install.sh | bash`) is no longer supported. It was non-versioned and harder to audit. Migrate existing repos to the submodule model.
+> **Deprecated:** The old curl bootstrap without submodule (`curl -sSL .../install.sh | bash`) remains supported during the migration window but is non-versioned and harder to audit. Migrate existing repos to the submodule model.
 
 ---
 
@@ -112,8 +112,8 @@ Every repo that uses devtools gets the same target names:
 | Target | What it does | Rust | Elixir | TypeScript | Python |
 |---|---|---|---|---|---|
 | `make lint` | Lint + format check | `cargo fmt --check` + `cargo clippy -D warnings` | `mix format --check-formatted` + `mix credo` | `biome check` | `ruff check` |
-| `make test` | Run tests | `cargo nextest run` | `mix test` | `bun test` | `pytest` |
-| `make build` | Build the project | `cargo build --release` | `mix release` | `bun run build` | `python -m build` |
+| `make test` | Run tests | `cargo nextest run` | `mix test` | `pnpm run test` | `pytest` |
+| `make build` | Build the project | `cargo build --release` | `mix release` | `pnpm run build` | `python -m build` |
 | `make ci` | Full CI locally (lint + test) | `make lint && make test` | same | same | same |
 | `make format` | Auto-format code | `cargo fmt --all` | `mix format` | `biome format --write` | `ruff format` |
 | `make clean` | Clean build artifacts | `cargo clean` | `mix clean` | `rm -rf dist node_modules/.cache` | `rm -rf build dist .pytest_cache` |

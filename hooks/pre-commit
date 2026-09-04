@@ -36,7 +36,13 @@ set -euo pipefail
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 
 # NUL-delimited staged file list — safe for paths with spaces, glob chars, etc.
-mapfile -d '' STAGED_FILES < <(git diff --cached --name-only --diff-filter=ACM -z)
+# R included: a staged RENAME destination keeps .env/secret coverage.
+# read -d '' loop (not mapfile -d): mapfile -d needs Bash 4.4+; macOS still
+# ships Bash 3.2, where this hook would die before validating anything.
+STAGED_FILES=()
+while IFS= read -r -d ''; do
+  STAGED_FILES+=("$REPLY")
+done < <(git diff --cached --name-only --diff-filter=ACMR -z)
 
 EXIT_CODE=0
 
@@ -307,21 +313,23 @@ fi
 # --- 13-18. File hygiene (absorbed from the org's former pre-commit
 # framework config; consolidated here so ONE hook mechanism exists) ---
 
-# 13. Trailing whitespace (markdown excluded: trailing double spaces are
-#     hard line breaks there)
-#     \r? handles CRLF: matches blanks before optional CR at end of line.
-for file in "${STAGED_FILES[@]}"; do
-  case "$file" in
-    *.md) continue ;;
-  esac
-  # Read from the index snapshot (staged blob), not the worktree.
-  if git show ":$file" 2>/dev/null | file - 2>/dev/null | grep -qi 'text\|json\|yaml\|xml\|empty'; then
-    ws_lines=$(git show ":$file" 2>/dev/null | grep -nE '[[:blank:]]+\r?$' 2>/dev/null || true)
-    if [ -n "$ws_lines" ]; then
-      fail "$file has trailing whitespace.\n$ws_lines"
+  # 13. Trailing whitespace (markdown excluded: trailing double spaces are
+  #     hard line breaks there)
+  #     CRLF-safe: ${cr} is a literal carriage return — grep -E's \r escape
+  #     is not portable across grep versions (GNU grep 3.8+ warns).
+  for file in "${STAGED_FILES[@]}"; do
+    case "$file" in
+      *.md) continue ;;
+    esac
+    # Read from the index snapshot (staged blob), not the worktree.
+    if git show ":$file" 2>/dev/null | file - 2>/dev/null | grep -qi 'text\|json\|yaml\|xml\|empty'; then
+      cr=$'\r'
+      ws_lines=$(git show ":$file" 2>/dev/null | grep -nE "[[:blank:]]+${cr}?\$" 2>/dev/null || true)
+      if [ -n "$ws_lines" ]; then
+        fail "$file has trailing whitespace.\n$ws_lines"
+      fi
     fi
-  fi
-done
+  done
 
 # 14. Files end with a newline
 for file in "${STAGED_FILES[@]}"; do
