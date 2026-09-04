@@ -1,0 +1,173 @@
+name: Conformance drift scan
+
+# Weekly audit of every ostara-labs repo's devtools consumption:
+# submodule gitlink + workflow `uses:` refs, compared against the latest
+# devtools release. Divergence was previously only caught by human
+# inspection — this makes it LOUD: red scheduled run + a rolling
+# tracking issue in this repository.
+#
+# Requires a fine-grained PAT with org repo read access stored as the
+# ORG_AUDIT_TOKEN secret (the built-in GITHUB_TOKEN cannot enumerate
+# org repos). Until that secret exists the scan fails with a clear
+# message — a config error, not drift.
+
+on:
+  schedule:
+    - cron: "23 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: drift-scan
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    name: scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Scan org repos for devtools drift
+        env:
+          # Read-only PAT: enumerates the org. Issue writes use github.token
+          # via the ISSUE_TOKEN override below — a read-scoped PAT cannot
+          # write, and issues: write does not extend to the PAT.
+          GH_TOKEN: ${{ secrets.ORG_AUDIT_TOKEN }}
+          ISSUE_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          SELF_REPO="${GITHUB_REPOSITORY}"
+          ORG="${GITHUB_REPOSITORY%%/*}"
+          SUMMARY="$GITHUB_STEP_SUMMARY"
+          BODY_FILE=$(mktemp)
+
+          if ! gh api "/orgs/$ORG/repos?per_page=1" --jq '.[0].name' >/dev/null 2>&1; then
+            echo "::error::Cannot enumerate org repos. Add a fine-grained PAT (org repo read) as the ORG_AUDIT_TOKEN secret."
+            exit 1
+          fi
+
+          # --- expected digest: latest devtools release, tag peeled ---
+          expected_tag=$(gh api "repos/$SELF_REPO/releases/latest" --jq .tag_name)
+          obj_type=$(gh api "repos/$SELF_REPO/git/ref/tags/$expected_tag" --jq .object.type)
+          obj_sha=$(gh api "repos/$SELF_REPO/git/ref/tags/$expected_tag" --jq .object.sha)
+          expected_sha="$obj_sha"
+          if [ "$obj_type" = "tag" ]; then
+            expected_sha=$(gh api "repos/$SELF_REPO/git/tags/$obj_sha" --jq .object.sha)
+          fi
+          echo "expected: $expected_tag -> $expected_sha"
+
+          {
+            echo "# Conformance drift report"
+            echo ""
+            echo "Reference: devtools \`$expected_tag\` (\`$expected_sha\`) — audit of every org repo's devtools consumption."
+            echo ""
+            echo "| Repo | .devtools | workflow refs | Status |"
+            echo "|---|---|---|---|"
+          } >> "$SUMMARY"
+
+          drift=0
+          mapfile -t repos < <(gh api "/orgs/$ORG/repos" --paginate --jq '.[].name')
+
+          resolve_ref() {
+            # $1 = revision (digest, tag, or branch); echoes the commit SHA.
+            # Unresolvable revisions return 1 — drift by policy (floating
+            # pins defeat the digest-pinning convention).
+            if echo "$1" | grep -qE '^[0-9a-f]{40}$'; then
+              echo "$1"
+              return 0
+            fi
+            local obj_type obj_sha
+            if ! obj_type=$(gh api "repos/$SELF_REPO/git/ref/tags/$1" --jq .object.type 2>/dev/null); then
+              return 1
+            fi
+            obj_sha=$(gh api "repos/$SELF_REPO/git/ref/tags/$1" --jq .object.sha)
+            if [ "$obj_type" = "tag" ]; then
+              gh api "repos/$SELF_REPO/git/tags/$obj_sha" --jq .object.sha
+            else
+              echo "$obj_sha"
+            fi
+          }
+
+          for repo in "${repos[@]}"; do
+            short="${repo#*/}"
+            if [ "$ORG/$repo" = "$SELF_REPO" ]; then
+              echo "| $short | — | — | SELF |" >> "$SUMMARY"
+              continue
+            fi
+
+            default_branch=$(gh api "repos/$ORG/$repo" --jq .default_branch 2>/dev/null) \
+              || { echo "| $short | ? | ? | UNREADABLE |" >> "$SUMMARY"; continue; }
+
+            tree=$(gh api "repos/$ORG/$repo/git/trees/$default_branch?recursive=1" 2>/dev/null || echo '{}')
+            submodule_sha=$(echo "$tree" | jq -r '.tree[]? | select(.path == ".devtools") | .sha // empty')
+            wf_files=$(echo "$tree" | jq -r '.tree[]? | select(.path | startswith(".github/workflows/")) | select(.type == "blob") | .path' 2>/dev/null || true)
+
+            refs=""
+            for wf in $wf_files; do
+              wf_refs=$(gh api "repos/$ORG/$repo/contents/$wf" --jq .content 2>/dev/null \
+                | base64 -d 2>/dev/null \
+                | grep -oE 'ostara-labs/devtools/[^ @]+@[^ @]+' \
+                | sed 's/.*@//' || true)
+              refs="$refs $wf_refs"
+            done
+
+            stale=""
+            floating=0
+            if [ -n "$submodule_sha" ] && [ "$submodule_sha" != "$expected_sha" ]; then
+              stale="submodule"
+            fi
+            for ref in $refs; do
+              echo "$ref" | grep -qE '^[0-9a-f]{40}$' || floating=$((floating + 1))
+              if ! ref_sha=$(resolve_ref "$ref"); then
+                stale="$stale unresolved-ref($ref)"
+                continue
+              fi
+              if [ "$ref_sha" != "$expected_sha" ]; then
+                stale="$stale workflow-ref($ref)"
+                break
+              fi
+            done
+
+            if [ -z "$submodule_sha" ] && [ -z "$(echo "$refs" | tr -d ' ')" ]; then
+              status="NOT CONSUMING"
+            elif [ "$floating" -gt 0 ]; then
+              status="FLOATING PIN ($floating)"
+              drift=$((drift + 1))
+            elif [ -n "$stale" ]; then
+              status="BEHIND ($stale)"
+              drift=$((drift + 1))
+            else
+              status="UP-TO-DATE"
+            fi
+
+            sub_cell="${submodule_sha:0:7}"
+            [ -z "$sub_cell" ] && sub_cell="—"
+            ref_count=$(echo "$refs" | wc -w)
+            echo "| $short | $sub_cell | $ref_count ref(s) | $status |" >> "$SUMMARY"
+          done
+
+          echo "" >> "$SUMMARY"
+          echo "**Drift count: $drift**" >> "$SUMMARY"
+
+          # --- rolling tracking issue in this repository ---
+          issue_number=$(GH_TOKEN="$ISSUE_TOKEN" gh api "search/issues?q=repo:$SELF_REPO+is:issue+is:open+conformance+drift+in:title" --jq '.items[0].number // empty' || true)
+          {
+            echo "Weekly conformance audit — drift count: **$drift** (reference: \`$expected_tag\`)."
+            echo ""
+            cat "$SUMMARY"
+          } >> "$BODY_FILE"
+          if [ -n "$issue_number" ]; then
+            GH_TOKEN="$ISSUE_TOKEN" gh api -X PATCH "repos/$SELF_REPO/issues/$issue_number" -F body=@"$BODY_FILE" --jq .number
+          else
+            GH_TOKEN="$ISSUE_TOKEN" gh api "repos/$SELF_REPO/issues" -f title="Conformance drift report" -F body=@"$BODY_FILE" --jq .number
+          fi
+
+          if [ "$drift" -gt 0 ]; then
+            echo "::error::$drift repo(s) behind the latest devtools release ($expected_tag)"
+            exit 1
+          fi
