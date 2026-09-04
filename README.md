@@ -4,9 +4,7 @@
 > Changes here affect enforcement across ALL repos in the organization.
 > The agent MUST NOT auto-merge PRs to this repo.
 
-Shared git hooks, Makefiles, CI workflows, and lint configs for all
-`ostara-labs` repositories. Ensures consistent code quality enforcement
-regardless of which repo the agent (or a human) is working in.
+Shared git hooks, Makefiles, ONE aggregate CI workflow, lint configs, drift-scan, and a Renovate preset for all `ostara-labs` repositories. Ensures consistent code quality enforcement regardless of which repo the agent (or a human) is working in.
 
 ---
 
@@ -14,62 +12,96 @@ regardless of which repo the agent (or a human) is working in.
 
 | Component | What it enforces | Used via |
 |---|---|---|
-| `hooks/` | Git hooks: pre-commit (secrets, file size, lint patterns), pre-push (clippy, tests, miri), commit-msg (format) | `git config core.hooksPath .devtools/hooks` |
-| `makefiles/` | Standard targets: `make lint`, `make test`, `make build`, `make ci`, `make format` | `include .devtools/makefiles/Makefile.<lang>` |
-| `workflows/` | Reusable GitHub Actions workflows: rust-ci, elixir-ci, ts-ci, pr-classify | `uses: ostara-labs/devtools/.github/workflows/<name>.yml@v1` |
-| `configs/` | Shared lint configs: clippy.toml, rustfmt.toml, biome.json | Symlink or copy into repo root |
-| `scripts/install.sh` | Bootstrap: sets hooksPath, creates Makefile stub | `curl -sSL .../install.sh \| bash` or run from submodule |
+| `hooks/` | Git hooks: pre-commit (secrets, file size, lint patterns, hygiene), pre-push (clippy, tests, miri, no-commit-to-branch), commit-msg (format) | `git config core.hooksPath .devtools/hooks` (relative path — set by `make hooks` or `install.sh`) |
+| `makefiles/` | Standard targets: `make lint`, `make test`, `make build`, `make ci`, `make format`, `make hooks`, `make devtools-update` | `include .devtools/makefiles/Makefile.<lang>` |
+| `workflows/ci.yml` | THE org aggregate CI: one caller line per repo, six required contexts, language jobs auto-detect + succeed vacuously when a stack is absent. Pinned by digest, bumped per release. | `uses: ostara-labs/devtools/.github/workflows/ci.yml@<digest> # vX.Y.Z` |
+| `workflows/drift-scan.yml` | Weekly conformance audit of every org repo (submodule gitlink + workflow refs vs latest release); red run + rolling tracking issue on drift. Requires `ORG_AUDIT_TOKEN` secret. | Org-level scheduled workflow |
+| `renovate-config.json` (now `default.json`) | Org Renovate preset: git-submodules + github-actions managers, automerge scoped to `.devtools` submodule and `ostara-labs/devtools/*` refs. | `extends ["github>ostara-labs/devtools"]` in `renovate.json` |
+| `configs/` | Shared lint configs: clippy.toml, rustfmt.toml, biome.json, plus seeded `.gitleaks.toml` and `.coderabbit.yaml` via `install.sh` | Symlink or copy into repo root |
+| `scripts/install.sh` | Bootstrap: sets the RELATIVE hooksPath, creates the Makefile stub, seeds configs | `bash .devtools/scripts/install.sh` from submodule |
 
 ---
 
 ## How a repo consumes devtools
 
-### Option A: Git submodule (recommended — versioned, explicit)
+The canonical model is a git submodule plus a 3-line CI caller:
 
 ```bash
 # In the consuming repo:
 git submodule add https://github.com/ostara-labs/devtools .devtools
-git commit -m "chore: add devtools submodule for cross-repo enforcement"
-
-# Configure git hooks
-git config core.hooksPath .devtools/hooks
-
-# Create a minimal Makefile (see makefiles/README.md for templates)
-# Or use the install script:
-bash .devtools/scripts/install.sh
+git config core.hooksPath .devtools/hooks   # or: make hooks
 ```
 
-Updates are explicit and visible in diffs:
-```bash
-cd .devtools
-git checkout v1.2  # pin to a specific version
-cd ..
-git add .devtools
-git commit -m "chore: bump devtools to v1.2"
+Create `.github/workflows/ci.yml` in the consuming repo:
+
+```yaml
+jobs:
+  gate:
+    uses: ostara-labs/devtools/.github/workflows/ci.yml@4ae963f9ce84f0cca317e3c1e629dcb4345b1635 # v1.4.1
+    with:
+      stack-dir: ""  # empty = language defaults (rust/, typescript/, elixir/, python/); "." = root manifests; custom dir for other layouts
 ```
 
-### Option B: Bootstrap script (no submodule)
+Updates: `make devtools-update` + move the caller `@SHA` to the matching tag commit — or let Renovate do it (automerge; every devtools change is human-reviewed at the source).
 
-```bash
-# From the consuming repo root:
-curl -sSL https://raw.githubusercontent.com/ostara-labs/devtools/v1/scripts/install.sh | bash
-```
+> **Deprecated:** The old curl bootstrap without submodule (`curl -sSL .../install.sh | bash`) is no longer supported. It was non-versioned and harder to audit. Migrate existing repos to the submodule model.
 
-This downloads hooks, Makefile templates, and configs into `.devtools/`
-(non-versioned, re-run to update). Simpler but less explicit than a submodule.
+---
+
+## Required status contexts
+
+Every repo using the aggregate CI MUST expose exactly these six status contexts to branch rulesets. Absent language stacks succeed vacuously, so a repo with only Rust still passes all six.
+
+| Context | Purpose |
+|---|---|
+| `gate / core` | Shared checks (secrets scan, file size, commit-msg format) |
+| `gate / rust / rust` | Rust stack: fmt, clippy, test, build |
+| `gate / elixir / elixir` | Elixir stack: format, credo, test, build |
+| `gate / typescript / typescript` | TypeScript stack: biome, test, build |
+| `gate / python / python` | Python stack: ruff, pytest, build |
+| `gate / gate` | Final aggregation + artifact gate |
+
+Renaming the caller job blocks merges loudly. ONE ruleset per repo requires exactly these contexts.
 
 ---
 
 ## Supported languages
 
-| Language | Detected by | Hook checks | Makefile | CI workflow |
+| Language | Detected by | Hook checks | Makefile | CI stack |
 |---|---|---|---|---|
-| Rust | `Cargo.toml` | unwrap/expect, println, unsafe, 250 LOC, cargo fmt | `Makefile.rust` | `rust-ci.yml` |
-| Elixir | `mix.exs` | IO.puts in production, mix format --check, 250 LOC | `Makefile.elixir` | `elixir-ci.yml` |
-| TypeScript | `package.json` | console.log in production, biome check, 250 LOC | `Makefile.typescript` | `ts-ci.yml` |
+| Rust | `Cargo.toml` | unwrap/expect, println, unsafe, 250 LOC, cargo fmt | `Makefile.rust` | `rust` |
+| Elixir | `mix.exs` | IO.puts in production, mix format --check, 250 LOC | `Makefile.elixir` | `elixir` |
+| TypeScript | `package.json` | console.log in production, biome check, 250 LOC | `Makefile.typescript` | `typescript` |
+| Python | `pyproject.toml` | ruff check, pytest, 250 LOC | `Makefile.python` | `python` |
 
-Hooks auto-detect the language — no configuration needed. A repo with both
-`Cargo.toml` and `package.json` runs checks for both.
+Hooks auto-detect the language — no configuration needed. A repo with both `Cargo.toml` and `package.json` runs checks for both.
+
+The TypeScript CI auto-detects the package manager: `pnpm` for repos with `pnpm-lock.yaml` (the template convention), `npm ci` for repos with `package-lock.json` — npm repos predating the template are supported in CI. The shared `Makefile.typescript` targets stay pnpm-based; npm-native repos run their npm scripts directly (Makefile alignment is a tracked follow-up).
+
+---
+
+## Org adoption status
+
+As of 2026-09-04 — **8 repos on aggregate pins**:
+
+| Repo | Pin | Notes |
+|---|---|---|
+| bb-league | v1.3.3 | Aggregate CI |
+| repo-template | v1.3.3 | Aggregate CI |
+| plot | v1.3.3 | Aggregate CI |
+| pia | v1.3.3 | Aggregate CI |
+| home | v1.3.3 | Aggregate CI |
+| world-monitor-tui | v1.3.3 | Aggregate CI |
+| messenger-assistant | v1.4.1 | npm stack |
+| mapscii-rust | v1.4.1 | First CI |
+| bot | custom | Custom CI stack stays; documented exception |
+| agents | docs-only | No CI (excluded) |
+| guidelines | docs-only | No CI (excluded) |
+| opencode-headroom-plugin | docs-only | No CI (excluded) |
+| test | docs-only | No CI (excluded) |
+| spec-forge | docs-only | No CI (excluded) |
+
+A Renovate/batch bump will align all pins to the latest release; the drift-scan flags lagging repos.
 
 ---
 
@@ -77,15 +109,17 @@ Hooks auto-detect the language — no configuration needed. A repo with both
 
 Every repo that uses devtools gets the same target names:
 
-| Target | What it does | Rust | Elixir | TypeScript |
-|---|---|---|---|---|
-| `make lint` | Lint + format check | `cargo fmt --check` + `cargo clippy -D warnings` | `mix format --check-formatted` + `mix credo` | `biome check` |
-| `make test` | Run tests | `cargo nextest run` | `mix test` | `bun test` |
-| `make build` | Build the project | `cargo build --release` | `mix release` | `bun run build` |
-| `make ci` | Full CI locally (lint + test) | `make lint && make test` | same | same |
-| `make format` | Auto-format code | `cargo fmt --all` | `mix format` | `biome format --write` |
-| `make clean` | Clean build artifacts | `cargo clean` | `mix clean` | `rm -rf dist node_modules/.cache` |
-| `make help` | List available targets | auto-generated | auto-generated | auto-generated |
+| Target | What it does | Rust | Elixir | TypeScript | Python |
+|---|---|---|---|---|---|
+| `make lint` | Lint + format check | `cargo fmt --check` + `cargo clippy -D warnings` | `mix format --check-formatted` + `mix credo` | `biome check` | `ruff check` |
+| `make test` | Run tests | `cargo nextest run` | `mix test` | `bun test` | `pytest` |
+| `make build` | Build the project | `cargo build --release` | `mix release` | `bun run build` | `python -m build` |
+| `make ci` | Full CI locally (lint + test) | `make lint && make test` | same | same | same |
+| `make format` | Auto-format code | `cargo fmt --all` | `mix format` | `biome format --write` | `ruff format` |
+| `make clean` | Clean build artifacts | `cargo clean` | `mix clean` | `rm -rf dist node_modules/.cache` | `rm -rf build dist .pytest_cache` |
+| `make hooks` | Set git hooksPath to `.devtools/hooks` | `git config core.hooksPath .devtools/hooks` | same | same | same |
+| `make devtools-update` | Bump submodule to latest release tag | `cd .devtools && git fetch && git checkout $(git describe --tags --abbrev=0)` | same | same | same |
+| `make help` | List available targets | auto-generated | auto-generated | auto-generated | auto-generated |
 
 The agent (and humans) always know that `make lint` works in any ostara-labs repo.
 
