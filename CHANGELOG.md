@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.0](https://github.com/ostara-labs/devtools/compare/v1.3.3...v1.4.0) (2026-09-04)
+
+
+### Features
+
+* **automation:** weekly conformance drift-scan + Renovate org preset ([#20](https://github.com/ostara-labs/devtools/issues/20)) ([4f3e9ce](https://github.com/ostara-labs/devtools/commit/4f3e9ce695ce3d11dea964b02fd1ec8d63d1f163))
+
 ## [1.3.3](https://github.com/ostara-labs/devtools/compare/v1.3.2...v1.3.3) (2026-09-03)
 
 
