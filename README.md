@@ -72,17 +72,17 @@ Renaming the caller job blocks merges loudly. ONE ruleset per repo requires exac
 | Rust | `Cargo.toml` | unwrap/expect, println, unsafe, 250 LOC, cargo fmt | `Makefile.rust` | `rust` |
 | Elixir | `mix.exs` | IO.puts in production, mix format --check, 250 LOC | `Makefile.elixir` | `elixir` |
 | TypeScript | `package.json` | console.log in production, biome check, 250 LOC | `Makefile.typescript` | `typescript` |
-| Python | `pyproject.toml` or `requirements.txt` | ruff check, pytest, 250 LOC | `Makefile.python` | `python` |
+| Python | `pyproject.toml` | ruff check, pytest, 250 LOC | `Makefile.python` | `python` |
 
 Hooks auto-detect the language — no configuration needed. A repo with both `Cargo.toml` and `package.json` runs checks for both.
 
-The TypeScript stack auto-detects the package manager: `pnpm` for repos with `pnpm-lock.yaml` (the template convention), `npm ci` for repos with `package-lock.json`. npm repos predating the template are supported.
+The TypeScript CI auto-detects the package manager: `pnpm` for repos with `pnpm-lock.yaml` (the template convention), `npm ci` for repos with `package-lock.json` — npm repos predating the template are supported in CI. The shared `Makefile.typescript` targets stay pnpm-based; npm-native repos run their npm scripts directly (Makefile alignment is a tracked follow-up).
 
 ---
 
 ## Org adoption status
 
-As of 2026-09-04:
+As of 2026-09-04 — **8 repos on aggregate pins**:
 
 | Repo | Pin | Notes |
 |---|---|---|
