@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.3](https://github.com/ostara-labs/devtools/compare/v1.4.2...v1.4.3) (2026-09-04)
+
+
+### Bug Fixes
+
+* **hooks:** harden the pre-commit hook (NUL-delimited iteration, index snapshots, CR-safe) ([#27](https://github.com/ostara-labs/devtools/issues/27)) ([caa02b9](https://github.com/ostara-labs/devtools/commit/caa02b9da409f9d10ef4f1877b7c1d5305e9835f))
+
 ## [1.4.2](https://github.com/ostara-labs/devtools/compare/v1.4.1...v1.4.2) (2026-09-04)
 
 
