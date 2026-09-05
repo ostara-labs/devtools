@@ -1,19 +1,32 @@
 name: PR meta
 
-# Automatic PR classification so humans never tick boxes for things a
-# machine computes better:
-#   - title  : enforces Conventional Commits on the PR title (blocking)
+# Reusable PR classification so humans never tick boxes for things a
+# machine computes better. Called by each repository's thin
+# .github/workflows/pr-meta.yml on pull_request events:
+#
+#   jobs:
+#     pr-meta:
+#       uses: ostara-labs/devtools/.github/workflows/pr-meta.yml@<sha>
+#
+#   - title  : enforces Conventional Commits on the PR title (blocking;
+#              skipped for Dependabot PRs — their titles are machine-
+#              generated "Bump ..." strings that no lint should gate)
 #   - size   : labels size/S|size/M|size/L|size/XL from the diff
 #   - risk   : labels risk/low|risk/medium|risk/high (trust-boundary files
 #              => risk/high; docs-only => risk/low)
+#
+# The event context is the caller's: github.event is the pull_request that
+# triggered the caller, and actions/checkout inside this workflow checks
+# out the caller's repository (needed by the risk job, which reads the
+# caller's .github/trust-boundary.yml).
+#
+# Fork pull requests: title still runs (read-only check); size and risk
+# are computed and published in the job summary only (the default token
+# is read-only there, so no labels/comments). The caller must grant
+# `pull-requests: write` for the label writes to land.
 
 on:
-  pull_request:
-    types: [opened, edited, synchronize, reopened]
-
-permissions:
-  contents: read
-  pull-requests: write
+  workflow_call:
 
 jobs:
   title:
@@ -23,13 +36,24 @@ jobs:
       - name: Check Conventional Commits title
         env:
           TITLE: ${{ github.event.pull_request.title }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
         run: |
           set -euo pipefail
+          # Dependabot titles are machine-generated ("Bump X from A to B",
+          # sometimes with a group suffix that also breaks the 100-char
+          # cap). Linting them guards nothing — skip the check entirely.
+          # Key on the PR AUTHOR, not github.actor: a manual re-run or an
+          # `edited` event is triggered by a human account, and linting the
+          # title then would fail exactly the PRs this exempts.
+          if [ "$AUTHOR" = "dependabot[bot]" ]; then
+            echo "title ok (dependabot, skip lint): $TITLE"
+            exit 0
+          fi
           pattern='^(Merge |Revert |fixup! )|^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-zA-Z0-9_./-]+\))?(!)?: .{1,}$'
           if [ ${#TITLE} -le 100 ] && echo "$TITLE" | grep -qE "$pattern"; then
             echo "title ok: $TITLE"
           else
-            echo "PR title must follow Conventional Commits:" >&2
+            echo "PR title must follow Conventional Commits (and stay under 100 chars):" >&2
             echo "  type(scope)!: subject   e.g. 'feat(rust): add retry loop'" >&2
             echo "  types: feat fix docs style refactor perf test build ci chore revert" >&2
             exit 1
@@ -50,9 +74,36 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.sha }}
+          IS_FORK: ${{ github.event.pull_request.head.repo.fork }}
         run: |
           set -euo pipefail
           git fetch --quiet origin "$BASE_SHA"
+
+          # Changed lines excluding lockfiles and generated artifacts.
+          # awk-only: a grep filter under pipefail kills the pipeline when
+          # the diff contains ONLY lockfiles (empty grep output, exit 1) —
+          # awk always prints a sum.
+          lines=$(git diff --numstat "$BASE_SHA" "$HEAD_SHA" \
+            | awk '$0 !~ /(Cargo\.lock|pnpm-lock\.yaml|mix\.lock|uv\.lock)$/ {sum+=$1+$2} END {print sum+0}')
+
+          if   [ "$lines" -lt 10 ]; then label=size/S
+          elif [ "$lines" -lt 100 ]; then label=size/M
+          elif [ "$lines" -lt 500 ]; then label=size/L
+          else label=size/XL
+          fi
+          echo "changed lines: $lines -> $label"
+
+          # Fork PRs get a read-only GITHUB_TOKEN: label/comment writes below
+          # would fail with HTTP 403 under set -e. Keep the signal visible:
+          # publish the computed size in the job summary instead.
+          if [ "$IS_FORK" = "true" ]; then
+            {
+              echo "## PR size (fork PR — read-only)"
+              echo ""
+              echo "changed lines: $lines -> \`$label\`"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
 
           ensure_label() {
             gh label create "$1" --color "$2" --force >/dev/null 2>&1 || true
@@ -61,18 +112,6 @@ jobs:
           ensure_label size/M fbca04
           ensure_label size/L f9d0c4
           ensure_label size/XL d93f0b
-
-          # Changed lines excluding lockfiles and generated artifacts.
-          lines=$(git diff --numstat "$BASE_SHA" "$HEAD_SHA" \
-            | grep -vE '(Cargo\.lock|pnpm-lock\.yaml|mix\.lock|uv\.lock)$' \
-            | awk '{sum+=$1+$2} END {print sum+0}')
-
-          if   [ "$lines" -lt 10 ]; then label=size/S
-          elif [ "$lines" -lt 100 ]; then label=size/M
-          elif [ "$lines" -lt 500 ]; then label=size/L
-          else label=size/XL
-          fi
-          echo "changed lines: $lines -> $label"
 
           for l in size/S size/M size/L size/XL; do
             if [ "$l" != "$label" ]; then
@@ -104,18 +143,12 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.sha }}
+          IS_FORK: ${{ github.event.pull_request.head.repo.fork }}
         run: |
           set -euo pipefail
           git fetch --quiet origin "$BASE_SHA"
           changed="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
           [ -n "$changed" ] || exit 0
-
-          ensure_label() {
-            gh label create "$1" --color "$2" --force >/dev/null 2>&1 || true
-          }
-          ensure_label risk/low 0e8a16
-          ensure_label risk/medium fbca04
-          ensure_label risk/high d93f0b
 
           matches_pattern() {
             local file="$1" pattern
@@ -138,6 +171,25 @@ jobs:
           else label=risk/medium
           fi
           echo "risk: $label"
+
+          # Fork PRs get a read-only GITHUB_TOKEN: label writes below would
+          # fail with HTTP 403 under set -e. Keep the signal visible: publish
+          # the computed risk in the job summary instead.
+          if [ "$IS_FORK" = "true" ]; then
+            {
+              echo "## PR risk (fork PR — read-only)"
+              echo ""
+              echo "risk: \`$label\`"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          ensure_label() {
+            gh label create "$1" --color "$2" --force >/dev/null 2>&1 || true
+          }
+          ensure_label risk/low 0e8a16
+          ensure_label risk/medium fbca04
+          ensure_label risk/high d93f0b
 
           for l in risk/low risk/medium risk/high; do
             if [ "$l" != "$label" ]; then
