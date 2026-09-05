@@ -98,6 +98,8 @@ jobs:
           --health-start-period 10s
       redis:
         image: redis:7-alpine
+        ports:
+          - 6379:6379
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 5s
