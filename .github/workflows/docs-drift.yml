@@ -1,0 +1,79 @@
+# Docs-drift gate (towncrier-style): code mapped in docs/DOC_MAP.yml must
+# ship with its docs. Missing mapped docs block as MISSING (create the
+# file); existing-but-untouched docs block as DRIFT (update one).
+#
+# The engine is the script inside the CALLER's .devtools submodule —
+# bump the submodule (make devtools-update) to pick up engine changes.
+# Roll out with warn=true for a week, then make the check required.
+
+name: docs-drift
+
+on:
+  workflow_call:
+    inputs:
+      warn:
+        description: "Report findings without failing (rollout mode)"
+        required: false
+        type: boolean
+        default: false
+      bypass_label:
+        description: "PR label that deliberately bypasses the check"
+        required: false
+        type: string
+        default: "no-docs"
+
+jobs:
+  docs-drift:
+    name: Docs drift (DOC_MAP)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install checker dependency
+        run: pip install --quiet pyyaml
+
+      - name: Check for bypass label
+        id: labels
+        env:
+          LABEL: ${{ inputs.bypass_label }}
+          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: |
+          if printf '%s' "$PR_LABELS" | grep -q "\"$LABEL\""; then
+            echo "bypassed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "bypassed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run docs-drift check
+        env:
+          BASE: origin/${{ github.base_ref }}
+        shell: bash
+        run: |
+          set -o pipefail
+          args=(--base "$BASE")
+          if [ "${{ inputs.warn }}" = "true" ]; then args+=(--warn); fi
+          if [ "${{ steps.labels.outputs.bypassed }}" = "true" ]; then args+=(--bypassed); fi
+          python3 .devtools/scripts/check-docs-drift.py "${args[@]}" | tee docs-drift.log
+
+      - name: Post findings as a PR comment (a bypass is loud, never silent)
+        if: steps.labels.outputs.bypassed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          {
+            echo "ℹ️ **docs-drift bypassed** via the \`${{ inputs.bypass_label }}\` label. Findings that were bypassed:"
+            echo ""
+            echo '```'
+            cat docs-drift.log
+            echo '```'
+          } > docs-drift-comment.md
+          gh pr comment "$NUMBER" --body-file docs-drift-comment.md
