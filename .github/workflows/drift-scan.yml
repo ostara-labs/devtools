@@ -38,10 +38,17 @@ jobs:
       - name: Mint App installation token
         id: app-token
         if: vars.DEVTOOLS_APP_ID != ''
+        # Mint failure (key missing, invalid) falls through to the PAT
+        # fallback below instead of killing the job.
+        continue-on-error: true
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           app-id: ${{ vars.DEVTOOLS_APP_ID }}
           private-key: ${{ secrets.DEVTOOLS_APP_PRIVATE_KEY }}
+          # Org-wide installation scope (All repositories): without this the
+          # token is scoped to the current repo only and the org enumeration
+          # below fails.
+          owner: ${{ github.repository_owner }}
 
       - name: Scan org repos for devtools drift
         env:
