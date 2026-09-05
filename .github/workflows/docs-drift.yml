@@ -65,6 +65,13 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
+          # The engine ships via the caller's .devtools submodule. The devtools
+          # repository itself has no such submodule (it IS the source) — skip
+          # vacuously, same pattern as the core job's hooks/ guard.
+          if [ ! -f .devtools/scripts/check-docs-drift.py ]; then
+            echo "no docs-drift engine (no .devtools submodule) — skipping"
+            exit 0
+          fi
           args=(--base "$BASE")
           if [ "${{ inputs.warn }}" = "true" ]; then args+=(--warn); fi
           if [ "${{ steps.labels.outputs.bypassed }}" = "true" ]; then args+=(--bypassed); fi
