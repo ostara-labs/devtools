@@ -29,6 +29,11 @@ on:
         required: false
         type: string
         default: ""
+      postgis-image:
+        description: "Opt-in PostGIS image for the python test-postgis job (e.g. postgis/postgis:17-3.5). Empty = job skipped."
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -79,6 +84,7 @@ jobs:
     uses: ./.github/workflows/python-ci.yml
     with:
       stack-dir: ${{ inputs['stack-dir'] != '' && inputs['stack-dir'] || 'python' }}
+      postgis-image: ${{ inputs.postgis-image }}
 
   # Docs-drift gate (towncrier-style): code mapped in docs/DOC_MAP.yml must
   # ship with its docs. Opt-in per repo — the workflow succeeds vacuously
