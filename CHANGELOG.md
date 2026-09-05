@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.0](https://github.com/ostara-labs/devtools/compare/v1.5.0...v1.6.0) (2026-09-05)
+
+
+### Features
+
+* **ci:** make pr-meta a reusable workflow, dependabot-safe and lockfile-safe ([#8](https://github.com/ostara-labs/devtools/issues/8)) ([ae25b1f](https://github.com/ostara-labs/devtools/commit/ae25b1fd38862b2ad1ea7a2b8d05b5de5e5dc4b4))
+
 ## [1.5.0](https://github.com/ostara-labs/devtools/compare/v1.4.3...v1.5.0) (2026-09-05)
 
 
