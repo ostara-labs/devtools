@@ -1,0 +1,176 @@
+name: AI review
+
+# Reusable AI PR-reviewer (PR-Agent + OpenRouter), consumed by a thin
+# caller per repo — same convergence model as ci.yml / pr-meta.yml.
+#
+# Contract (agreed 2026-09-06, replaces CodeRabbit on ostara-labs):
+#   - runs ONLY on non-draft PRs, and only after the repo's CI is green
+#     (own checks excluded from the gate wait to avoid self-deadlock)
+#   - always reports a check conclusion: draft or CI-red -> success
+#     ("review skipped"), review completed -> success, blocking label
+#     present -> failure
+#   - severity blocking: the check fails while the PR carries a blocking
+#     label (default: "possible security issue"); removing the label
+#     re-runs the check green via the caller's `unlabeled` trigger —
+#     a deliberate, audited override
+#   - model routing is an input (defaults below); per-repo reviewer
+#     calibration lives in the consumer repo's .pr_agent.toml
+#     (AGENTS.md at the consumer repo root is picked up automatically)
+
+on:
+  workflow_call:
+    inputs:
+      model:
+        description: 'Primary model (LiteLLM notation). Empty = default below.'
+        required: false
+        type: string
+        default: 'openrouter/deepseek/deepseek-v4-flash'
+      fallback-models:
+        description: 'JSON array of fallback models. Empty = default below.'
+        required: false
+        type: string
+        default: '["openrouter/z-ai/glm-5.3-flash"]'
+      blocking-labels:
+        description: 'JSON array of PR labels that fail the check'
+        required: false
+        type: string
+        default: '["possible security issue"]'
+      pr-number:
+        description: 'PR number for manual (workflow_dispatch) A/B runs'
+        required: false
+        type: string
+        default: ''
+    secrets:
+      OPENROUTER_API_KEY:
+        required: true
+
+jobs:
+  ai-review:
+    name: ai-review
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Resolve PR context
+        id: ctx
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr-number }}
+          MODEL_INPUT: ${{ inputs.model }}
+          FALLBACK_INPUT: ${{ inputs.fallback-models }}
+        run: |
+          set -euo pipefail
+          # Always-report: every exit path leaves a conclusion on the check.
+          if [ -z "${PR_NUMBER:-}" ] || [ "${PR_NUMBER}" = "null" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "reason=No pull request context (nothing to review)" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          PR_JSON=$(gh api "repos/${REPO}/pulls/${PR_NUMBER}")
+          DRAFT=$(echo "${PR_JSON}" | jq -r .draft)
+          STATE=$(echo "${PR_JSON}" | jq -r .state)
+          if [ "${DRAFT}" != "false" ] || [ "${STATE}" != "open" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "reason=PR is a draft (${DRAFT}) or not open (${STATE})" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          HEAD_SHA=$(echo "${PR_JSON}" | jq -r .head.sha)
+          {
+            echo "skip=false"
+            echo "pr=${PR_NUMBER}"
+            echo "head_sha=${HEAD_SHA}"
+          } >> "$GITHUB_OUTPUT"
+          # Model routing: explicit input wins, else the defaults above.
+          if [ -n "${MODEL_INPUT}" ]; then
+            echo "MODEL=${MODEL_INPUT}" >> "$GITHUB_ENV"
+          else
+            echo "MODEL=openrouter/deepseek/deepseek-v4-flash" >> "$GITHUB_ENV"
+          fi
+          if [ -n "${FALLBACK_INPUT}" ]; then
+            echo "FALLBACK_MODELS=${FALLBACK_INPUT}" >> "$GITHUB_ENV"
+          else
+            echo "FALLBACK_MODELS=[\"openrouter/z-ai/glm-5.3-flash\"]" >> "$GITHUB_ENV"
+          fi
+
+      - name: Wait for CI to go green
+        id: gate
+        if: steps.ctx.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ steps.ctx.outputs.pr }}
+          HEAD_SHA: ${{ steps.ctx.outputs.head_sha }}
+        run: |
+          set -euo pipefail
+          # Poll the check-runs of the head SHA, excluding our own checks
+          # (caller job and nested runs) so the gate cannot deadlock on
+          # the review it is gating. Two phases:
+          #   1. wait until at least one non-excluded check registers
+          #      (avoids a premature green before CI even starts)
+          #   2. wait until all non-excluded checks are completed
+          # A red CI reports ci=red and the review is skipped — the CI
+          # checks themselves are what block the merge, not us.
+          for i in $(seq 1 90); do
+            RUNS=$(gh api "repos/${REPO}/commits/${HEAD_SHA}/check-runs?per_page=100" \
+              --jq '[.check_runs[] | select((.name | ascii_downcase) | contains("ai-review") | not)]')
+            TOTAL=$(echo "${RUNS}" | jq 'length')
+            PENDING=$(echo "${RUNS}" | jq '[.[] | select(.status != "completed")] | length')
+            FAILED=$(echo "${RUNS}" | jq '[.[] | select(.conclusion == "failure" or .conclusion == "cancelled" or .conclusion == "timed_out")] | length')
+            echo "gate poll ${i}/90 — total=${TOTAL} pending=${PENDING} failed=${FAILED}"
+            if [ "${TOTAL}" -gt 0 ] && [ "${PENDING}" -eq 0 ]; then
+              if [ "${FAILED}" -gt 0 ]; then
+                echo "ci=red" >> "$GITHUB_OUTPUT"
+                echo "reason=${FAILED} CI check(s) failed — review skipped" >> "$GITHUB_OUTPUT"
+              else
+                echo "ci=green" >> "$GITHUB_OUTPUT"
+                echo "reason=${TOTAL} CI check(s) green — starting review" >> "$GITHUB_OUTPUT"
+              fi
+              exit 0
+            fi
+            sleep 20
+          done
+          echo "ci=timeout" >> "$GITHUB_OUTPUT"
+          echo "reason=CI did not settle within 30 minutes — review skipped" >> "$GITHUB_OUTPUT"
+
+      - name: Run PR-Agent review
+        if: steps.ctx.outputs.skip != 'true' && steps.gate.outputs.ci == 'green'
+        # Expressions are not allowed in a step-level `uses:` — the ref is
+        # hardcoded. Pin for production with the Docker form instead:
+        #   uses: docker://pragent/pr-agent:<version>-github_action
+        # (digest-pinnable, GitHub Artifact Attestations verifiable).
+        uses: the-pr-agent/pr-agent@main
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          OPENROUTER.KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          CONFIG.MODEL: ${{ env.MODEL }}
+          CONFIG.FALLBACK_MODELS: ${{ env.FALLBACK_MODELS }}
+          GITHUB_ACTION_CONFIG.AUTO_REVIEW: 'true'
+          GITHUB_ACTION_CONFIG.AUTO_DESCRIBE: 'false'
+          GITHUB_ACTION_CONFIG.AUTO_IMPROVE: 'false'
+          GITHUB_ACTION_CONFIG.PR_ACTIONS: '["opened", "reopened", "ready_for_review", "synchronize"]'
+
+      - name: Severity gate (blocking labels)
+        if: steps.ctx.outputs.skip != 'true' && steps.gate.outputs.ci == 'green'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ steps.ctx.outputs.pr }}
+          BLOCKING_LABELS: ${{ inputs.blocking-labels }}
+        run: |
+          set -euo pipefail
+          # Fail the required check while a blocking label is present.
+          # Removing the label re-runs this check green (caller listens
+          # on `unlabeled`) — the documented, audited override path.
+          LABELS=$(gh api "repos/${REPO}/pulls/${PR}" --jq '[.labels[].name]')
+          HIT=$(echo "${LABELS}" | jq -r --argjson blocking "${BLOCKING_LABELS}" \
+            '[.[] | select(. as $l | $blocking | index($l))] | length')
+          if [ "${HIT}" -gt 0 ]; then
+            echo "Blocking label(s) present on PR #${PR}: ${LABELS}"
+            echo "Fix the findings, or remove the label to record a deliberate override."
+            exit 1
+          fi
+          echo "No blocking label — check green."
