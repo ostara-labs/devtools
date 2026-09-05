@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.0](https://github.com/ostara-labs/devtools/compare/v1.7.0...v1.8.0) (2026-09-05)
+
+
+### Features
+
+* **ci:** relay postgis-image through the aggregate ([#38](https://github.com/ostara-labs/devtools/issues/38)) ([f041afe](https://github.com/ostara-labs/devtools/commit/f041afe3d344cc04d3cb5cea44154007111581b8))
+
 ## [1.7.0](https://github.com/ostara-labs/devtools/compare/v1.6.0...v1.7.0) (2026-09-05)
 
 
