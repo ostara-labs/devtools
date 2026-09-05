@@ -6,10 +6,15 @@ name: Conformance drift scan
 # inspection — this makes it LOUD: red scheduled run + a rolling
 # tracking issue in this repository.
 #
-# Requires a fine-grained PAT with org repo read access stored as the
-# ORG_AUDIT_TOKEN secret (the built-in GITHUB_TOKEN cannot enumerate
-# org repos). Until that secret exists the scan fails with a clear
-# message — a config error, not drift.
+# Requires org-wide read access — the built-in GITHUB_TOKEN cannot
+# enumerate private org repos. Auth chain (first available wins):
+#   1. GitHub App installation token — set the DEVTOOLS_APP_ID variable
+#      and the DEVTOOLS_APP_PRIVATE_KEY secret (preferred: no manual
+#      expiry, independently revocable — see README "Drift-scan setup").
+#   2. ORG_AUDIT_TOKEN — a fine-grained PAT with org repo read access
+#      (legacy fallback).
+#   3. Built-in GITHUB_TOKEN — fails with a clear message; a config
+#      error, not drift.
 
 on:
   schedule:
@@ -30,12 +35,28 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
+      - name: Mint App installation token
+        id: app-token
+        if: vars.DEVTOOLS_APP_ID != ''
+        # Mint failure (key missing, invalid) falls through to the PAT
+        # fallback below instead of killing the job.
+        continue-on-error: true
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ vars.DEVTOOLS_APP_ID }}
+          private-key: ${{ secrets.DEVTOOLS_APP_PRIVATE_KEY }}
+          # Org-wide installation scope (All repositories): without this the
+          # token is scoped to the current repo only and the org enumeration
+          # below fails.
+          owner: ${{ github.repository_owner }}
+
       - name: Scan org repos for devtools drift
         env:
-          # Read-only PAT: enumerates the org. Issue writes use github.token
-          # via the ISSUE_TOKEN override below — a read-scoped PAT cannot
-          # write, and issues: write does not extend to the PAT.
-          GH_TOKEN: ${{ secrets.ORG_AUDIT_TOKEN }}
+          # Auth chain per the header comment. Issue writes use github.token
+          # via the ISSUE_TOKEN override below — neither the App token (when
+          # scoped read) nor a read-scoped PAT inherits the issues: write
+          # permission granted to the built-in token on this repository.
+          GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.ORG_AUDIT_TOKEN || secrets.GITHUB_TOKEN }}
           ISSUE_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
@@ -47,7 +68,7 @@ jobs:
           BODY_FILE=$(mktemp)
 
           if ! gh api "/orgs/$ORG/repos?per_page=1" --jq '.[0].name' >/dev/null 2>&1; then
-            echo "::error::Cannot enumerate org repos. Add a fine-grained PAT (org repo read) as the ORG_AUDIT_TOKEN secret."
+            echo "::error::Cannot enumerate org repos. Configure the drift-scan auth: set variable DEVTOOLS_APP_ID + secret DEVTOOLS_APP_PRIVATE_KEY (GitHub App, preferred — see README 'Drift-scan setup') or secret ORG_AUDIT_TOKEN (fine-grained PAT)."
             exit 1
           fi
 
