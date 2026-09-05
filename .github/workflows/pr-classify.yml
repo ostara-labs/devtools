@@ -89,7 +89,7 @@ jobs:
             gh pr edit "$PR_NUMBER" --add-label requires-human-review >/dev/null 2>&1 || true
             if [ "$has_label" != "true" ]; then
               {
-                echo "## ⚠️ Trust boundary touched"
+                echo "## Trust boundary touched"
                 echo ""
                 echo "This PR modifies files protected by \`.github/trust-boundary.yml\`:"
                 echo ""

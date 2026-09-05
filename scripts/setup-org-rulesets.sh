@@ -17,6 +17,11 @@
 #
 set -euo pipefail
 
+# Windows (Git Bash): MSYS rewrites leading-slash arguments into Windows
+# paths, which corrupts the gh api endpoints below ("/orgs/..." would
+# arrive as a filesystem path). Disable conversion for this process.
+export MSYS_NO_PATHCONV=1
+
 ORG="${1:?usage: bash scripts/setup-org-rulesets.sh <org>}"
 
 EXCLUDED_REPOS=("bot" "devtools")
