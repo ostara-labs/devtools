@@ -6,9 +6,9 @@ name: CI
 # review (see trust-boundary-protect.yml).
 #
 # This workflow is ALSO the org-wide aggregate: consumer repos call it with
-# a one-line job named `gate`, exposing exactly six required contexts:
+# a one-line job named `gate`, exposing exactly seven required contexts:
 #   gate / core, gate / rust, gate / elixir, gate / typescript, gate / python,
-#   gate / gate
+#   gate / docs-drift, gate / gate
 # Stack jobs report "skipped" when the language is absent — skipped required
 # checks satisfy org rulesets, so ONE ruleset fits every repo. Renaming the
 # caller job makes the required contexts never report: merge blocks loudly.
@@ -80,12 +80,20 @@ jobs:
     with:
       stack-dir: ${{ inputs['stack-dir'] != '' && inputs['stack-dir'] || 'python' }}
 
+  # Docs-drift gate (towncrier-style): code mapped in docs/DOC_MAP.yml must
+  # ship with its docs. Opt-in per repo — the workflow succeeds vacuously
+  # without a map, so this job is safe for every consumer from day one.
+  # Local ./ reference resolves from THIS repository (same proven pattern
+  # as the language jobs above).
+  docs-drift:
+    uses: ./.github/workflows/docs-drift.yml
+
   # Universal merge gate: every repository consuming devtools exposes
   # exactly this context to the org ruleset. Composition may evolve; the
   # contract ("gate green = mergeable") does not.
   gate:
     name: gate
-    needs: [core, rust, elixir, typescript, python]
+    needs: [core, rust, elixir, typescript, python, docs-drift]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
