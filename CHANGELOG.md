@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.5.0](https://github.com/ostara-labs/devtools/compare/v1.4.3...v1.5.0) (2026-09-05)
+
+
+### Features
+
+* **ci:** docs-drift gate (DOC_MAP + reusable workflow) ([#6](https://github.com/ostara-labs/devtools/issues/6)) ([e5aa8df](https://github.com/ostara-labs/devtools/commit/e5aa8dfad8cd830d4920fc201c0cfc56ce12886c))
+* **ci:** wire docs-drift into the org aggregate ([#34](https://github.com/ostara-labs/devtools/issues/34)) ([217d4fd](https://github.com/ostara-labs/devtools/commit/217d4fda8a6af03a615f126beaeb8d2fcafe78ab))
+
+
+### Bug Fixes
+
+* **drift-scan:** GitHub App auth preferred + adoption table refresh ([#30](https://github.com/ostara-labs/devtools/issues/30)) ([2e8e11c](https://github.com/ostara-labs/devtools/commit/2e8e11c7d6b1a3d6aa240161c9f09ce9d7004b0a))
+
 ## [1.4.3](https://github.com/ostara-labs/devtools/compare/v1.4.2...v1.4.3) (2026-09-04)
 
 
