@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.0](https://github.com/ostara-labs/devtools/compare/v1.6.0...v1.7.0) (2026-09-05)
+
+
+### Features
+
+* **ci:** opt-in PostGIS test job in python-ci ([#9](https://github.com/ostara-labs/devtools/issues/9)) ([9319eee](https://github.com/ostara-labs/devtools/commit/9319eee80415e10260173b0a24d6e7459e4febf8))
+
 ## [1.6.0](https://github.com/ostara-labs/devtools/compare/v1.5.0...v1.6.0) (2026-09-05)
 
 
