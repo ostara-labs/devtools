@@ -4,7 +4,8 @@ name: Merge gate
 # the three merge conditions agreed for ostara-labs:
 #   1. CI passed (the repo's CI workflow, latest run on this head SHA)
 #   2. AI review passed (the review workflow, latest run on this head SHA)
-#   3. no blocking label on the PR (default: "possible security issue")
+#   3. no blocking label on the PR (default: "possible security issue",
+#      "size/too-big" — removed by an authorized human = audited override)
 #
 # Rendez-vous WITHOUT polling: the caller triggers this workflow on the
 # completion of EITHER the CI or the review workflow (plus on `unlabeled`
@@ -47,7 +48,7 @@ on:
         description: 'JSON array of PR labels that block the merge'
         required: false
         type: string
-        default: '["possible security issue"]'
+        default: '["possible security issue", "size/too-big"]'
 
 jobs:
   gate:

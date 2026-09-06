@@ -27,6 +27,12 @@ name: PR meta
 
 on:
   workflow_call:
+    inputs:
+      too-big-threshold:
+        description: 'Added lines (excluding generated/lock files) above which size/too-big is applied and the merge-gate blocks'
+        required: false
+        type: string
+        default: '1000'
 
 jobs:
   title:
@@ -73,6 +79,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           IS_FORK: ${{ github.event.pull_request.head.repo.fork }}
+          TOO_BIG_THRESHOLD: ${{ inputs.too-big-threshold }}
         run: |
           set -euo pipefail
           # Diff data comes straight from the PR files API: checkout runs
@@ -80,19 +87,26 @@ jobs:
           # with "could not read Username" (observed on every pia PR since
           # v1.6.0 — 2026-09-06). gh uses GH_TOKEN, no git creds involved.
           #
-          # Changed lines excluding lockfiles and generated artifacts.
-          lines=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" --paginate --slurp \
-            | jq '[.[].[]
-                   | select((.filename | test("(Cargo\\.lock|pnpm-lock\\.yaml|mix\\.lock|uv\\.lock)$")) | not)
-                   | .additions + .deletions]
-                  | add // 0')
+          # The endpoint caps at 3000 files even with pagination — hitting
+          # the cap means the PR is too big by definition (fail closed).
+          FILES_JSON="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" --paginate --slurp)"
+          file_count="$(echo "${FILES_JSON}" | jq '[.[].[]] | length')"
+          # Added lines excluding generated/lock artifacts.
+          EXCL='(Cargo\.lock|pnpm-lock\.yaml|mix\.lock|uv\.lock|package-lock\.json|yarn\.lock|go\.sum)$'
+          lines_added="$(echo "${FILES_JSON}" | jq --arg re "${EXCL}" \
+            '[.[].[] | select((.filename | test($re)) | not) | .additions] | add // 0')"
+          lines_total="$(echo "${FILES_JSON}" | jq --arg re "${EXCL}" \
+            '[.[].[] | select((.filename | test($re)) | not) | .additions + .deletions] | add // 0')"
+          echo "files=${file_count} added=${lines_added} total=${lines_total} threshold=${TOO_BIG_THRESHOLD}"
 
-          if   [ "$lines" -lt 10 ]; then label=size/S
-          elif [ "$lines" -lt 100 ]; then label=size/M
-          elif [ "$lines" -lt 500 ]; then label=size/L
+          if [ "${file_count}" -ge 3000 ] || [ "${lines_added}" -gt "${TOO_BIG_THRESHOLD}" ]; then
+            label=size/too-big
+          elif [ "${lines_total}" -lt 10 ]; then label=size/S
+          elif [ "${lines_total}" -lt 100 ]; then label=size/M
+          elif [ "${lines_total}" -lt 500 ]; then label=size/L
           else label=size/XL
           fi
-          echo "changed lines: $lines -> $label"
+          echo "label: ${label}"
 
           # Fork PRs get a read-only GITHUB_TOKEN: label/comment writes below
           # would fail with HTTP 403 under set -e. Keep the signal visible:
@@ -101,7 +115,7 @@ jobs:
             {
               echo "## PR size (fork PR — read-only)"
               echo ""
-              echo "changed lines: $lines -> \`$label\`"
+              echo "files=${file_count} added=${lines_added} total=${lines_total} -> \`$label\`"
             } >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
@@ -109,19 +123,29 @@ jobs:
           ensure_label() {
             gh label create "$1" --color "$2" --force >/dev/null 2>&1 || true
           }
+          ensure_label size/too-big b60205
           ensure_label size/S 0e8a16
           ensure_label size/M fbca04
           ensure_label size/L f9d0c4
           ensure_label size/XL d93f0b
 
-          for l in size/S size/M size/L size/XL; do
+          for l in size/too-big size/S size/M size/L size/XL; do
             if [ "$l" != "$label" ]; then
               gh pr edit "$PR_NUMBER" --remove-label "$l" >/dev/null 2>&1 || true
             fi
           done
           gh pr edit "$PR_NUMBER" --add-label "$label" >/dev/null
 
-          if [ "$label" = "size/XL" ]; then
+          if [ "$label" = "size/too-big" ]; then
+            {
+              echo ":no_entry: This PR adds more than ${TOO_BIG_THRESHOLD} lines (excluding generated/lock files) — or exceeds the 3000-file API cap."
+              echo "Split it into independent, mergeable pieces."
+              echo ""
+              echo "Legitimate large refactors: remove the \`size/too-big\` label — the merge gate re-runs green and records the override."
+            } > body.md
+            gh pr comment "$PR_NUMBER" --body-file body.md >/dev/null
+            rm -f body.md
+          elif [ "$label" = "size/XL" ]; then
             {
               echo ':warning: This PR changes **500+ lines**. Large PRs are harder to review thoroughly - consider splitting it into independent, mergeable pieces if the change allows it.'
             } > body.md
