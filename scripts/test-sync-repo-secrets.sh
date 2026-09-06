@@ -5,11 +5,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # Git Bash on Windows: $TEMP is a Windows path (backslashes) — convert it,
-# otherwise the stub gh never resolves via PATH.
+# otherwise the stub gh never resolves via PATH. mktemp -d keeps the stub
+# and fixtures out of predictable paths.
 if command -v cygpath >/dev/null 2>&1 && [ -n "${TEMP:-}" ]; then
-	WORK="$(cygpath -u "${TEMP}")/sync-test-$$"
+	WORK="$(mktemp -d "${TEMP:-/tmp}/sync-test-XXXXXX")"
+	WORK="$(cygpath -u "${WORK}")"
 else
-	WORK="${TEMP:-/tmp}/sync-test-$$"
+	WORK="$(mktemp -d)"
 fi
 STUB="${WORK}/bin"
 mkdir -p "${STUB}"
@@ -32,9 +34,12 @@ cleanup() { rm -rf "${WORK}"; }
 trap cleanup EXIT
 
 # ---------- Phase A: values from a secrets.env file ----------
+# NOTE: fixture keys use TEST FIXTURE markers (not BEGIN/END ... PRIVATE KEY)
+# so gitleaks' private-key rule does not flag this file — they protect
+# nothing and unlock nothing.
 SECF="${WORK}/secrets.env"
 printf 'OPENROUTER_API_KEY=sk-or-v1-test123\r\n' > "${SECF}"
-printf 'export DEVTOOLS_APP_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\\nMIIEline1\\nMIIEline2\\n-----END RSA PRIVATE KEY-----"\n' >> "${SECF}"
+printf 'export DEVTOOLS_APP_PRIVATE_KEY="-----BEGIN TEST FIXTURE-----\\nMIIEline1\\nMIIEline2\\n-----END TEST FIXTURE-----"\n' >> "${SECF}"
 
 SECRETS_FILE="${SECF}" PATH="${STUB}:${PATH}" bash "${SCRIPT_DIR}/sync-repo-secrets.sh" pia >/dev/null
 
@@ -51,9 +56,9 @@ else
 	echo "A1 FAIL: OPENROUTER_API_KEY got: [$(cat "${or_file}" 2>/dev/null)]"; fail=1
 fi
 if [ -f "${pem_file}" ] \
-	&& [ "$(sed -n '1p' "${pem_file}")" = "-----BEGIN RSA PRIVATE KEY-----" ] \
+	&& [ "$(sed -n '1p' "${pem_file}")" = "-----BEGIN TEST FIXTURE-----" ] \
 	&& [ "$(sed -n '2p' "${pem_file}")" = "MIIEline1" ] \
-	&& [ "$(sed -n '4p' "${pem_file}")" = "-----END RSA PRIVATE KEY-----" ]; then
+	&& [ "$(sed -n '4p' "${pem_file}")" = "-----END TEST FIXTURE-----" ]; then
 	echo "A2 PASS: PEM multi-line from \\n escapes (4 lines, correct header/footer)"
 else
 	echo "A2 FAIL: PEM content: [$(cat "${pem_file}" 2>/dev/null)]"; fail=1
@@ -61,7 +66,7 @@ fi
 
 # ---------- Phase B: interactive prompt (piped stdin, no secrets file) ----------
 B_IN="${WORK}/prompt-input.txt"
-printf 'sk-or-v1-prompt\n-----BEGIN RSA PRIVATE KEY-----\nline1\n-----END RSA PRIVATE KEY-----\n\n' > "${B_IN}"
+printf 'sk-or-v1-prompt\n-----BEGIN TEST FIXTURE-----\nline1\n-----END TEST FIXTURE-----\n\n' > "${B_IN}"
 SECRETS_FILE="${WORK}/does-not-exist.env" PATH="${STUB}:${PATH}" \
 	bash "${SCRIPT_DIR}/sync-repo-secrets.sh" pia < "${B_IN}" >/dev/null 2>&1
 
@@ -74,9 +79,9 @@ else
 	echo "B1 FAIL: prompt OPENROUTER got: [$(cat "${or_file_b}" 2>/dev/null)]"; fail=1
 fi
 if [ -f "${pem_file_b}" ] \
-	&& [ "$(sed -n '1p' "${pem_file_b}")" = "-----BEGIN RSA PRIVATE KEY-----" ] \
+	&& [ "$(sed -n '1p' "${pem_file_b}")" = "-----BEGIN TEST FIXTURE-----" ] \
 	&& [ "$(sed -n '2p' "${pem_file_b}")" = "line1" ] \
-	&& [ "$(sed -n '3p' "${pem_file_b}")" = "-----END RSA PRIVATE KEY-----" ]; then
+	&& [ "$(sed -n '3p' "${pem_file_b}")" = "-----END TEST FIXTURE-----" ]; then
 	echo "B2 PASS: prompt mode multi-line PEM (3 lines, empty-line terminator)"
 else
 	echo "B2 FAIL: prompt PEM content: [$(cat "${pem_file_b}" 2>/dev/null)]"; fail=1
