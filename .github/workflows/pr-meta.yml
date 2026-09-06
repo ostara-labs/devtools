@@ -72,19 +72,20 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.sha }}
           IS_FORK: ${{ github.event.pull_request.head.repo.fork }}
         run: |
           set -euo pipefail
-          git fetch --quiet origin "$BASE_SHA"
-
+          # Diff data comes straight from the PR files API: checkout runs
+          # with persist-credentials: false, so any `git fetch` would die
+          # with "could not read Username" (observed on every pia PR since
+          # v1.6.0 — 2026-09-06). gh uses GH_TOKEN, no git creds involved.
+          #
           # Changed lines excluding lockfiles and generated artifacts.
-          # awk-only: a grep filter under pipefail kills the pipeline when
-          # the diff contains ONLY lockfiles (empty grep output, exit 1) —
-          # awk always prints a sum.
-          lines=$(git diff --numstat "$BASE_SHA" "$HEAD_SHA" \
-            | awk '$0 !~ /(Cargo\.lock|pnpm-lock\.yaml|mix\.lock|uv\.lock)$/ {sum+=$1+$2} END {print sum+0}')
+          lines=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" --paginate --slurp \
+            | jq '[.[].[]
+                   | select((.filename | test("(Cargo\\.lock|pnpm-lock\\.yaml|mix\\.lock|uv\\.lock)$")) | not)
+                   | .additions + .deletions]
+                  | add // 0')
 
           if   [ "$lines" -lt 10 ]; then label=size/S
           elif [ "$lines" -lt 100 ]; then label=size/M
@@ -141,13 +142,12 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.sha }}
           IS_FORK: ${{ github.event.pull_request.head.repo.fork }}
         run: |
           set -euo pipefail
-          git fetch --quiet origin "$BASE_SHA"
-          changed="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
+          # PR files API again — see the size job for why (no git creds).
+          changed="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" --paginate --slurp \
+            | jq -r '[.[].[] | .filename] | join("\n")')"
           [ -n "$changed" ] || exit 0
 
           matches_pattern() {

@@ -109,7 +109,10 @@ jobs:
         run: |
           echo "needs results: $RESULTS"
           for result in $RESULTS; do
-            if [ "$result" != "success" ]; then
+            # "skipped" is a designed outcome, not a failure: stack jobs
+            # skip when the language is absent, docs-drift skips on push
+            # events. Only failure / cancelled / timed_out block the gate.
+            if [ "$result" != "success" ] && [ "$result" != "skipped" ]; then
               echo "::error::gate did not succeed: $result"
               exit 1
             fi
