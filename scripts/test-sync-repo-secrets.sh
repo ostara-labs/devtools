@@ -43,7 +43,7 @@ printf 'export DEVTOOLS_APP_PRIVATE_KEY="-----BEGIN TEST FIXTURE-----\\nMIIEline
 
 SECRETS_FILE="${SECF}" PATH="${STUB}:${PATH}" bash "${SCRIPT_DIR}/sync-repo-secrets.sh" pia >/dev/null
 
-or_file="${WORK}/received-ostara-labs_pia-OPENROUTER_API_KEY.txt"
+or_file="${WORK}/received-ostara-labs_pia-AI_REVIEW_OPENROUTER_API_KEY.txt"
 pem_file="${WORK}/received-ostara-labs_pia-DEVTOOLS_APP_PRIVATE_KEY.txt"
 
 if [ ! -f "${WORK}/stub-used" ]; then
@@ -70,7 +70,7 @@ printf 'sk-or-v1-prompt\n-----BEGIN TEST FIXTURE-----\nline1\n-----END TEST FIXT
 SECRETS_FILE="${WORK}/does-not-exist.env" PATH="${STUB}:${PATH}" \
 	bash "${SCRIPT_DIR}/sync-repo-secrets.sh" pia < "${B_IN}" >/dev/null 2>&1
 
-or_file_b="${WORK}/received-ostara-labs_pia-OPENROUTER_API_KEY.txt"
+or_file_b="${WORK}/received-ostara-labs_pia-AI_REVIEW_OPENROUTER_API_KEY.txt"
 pem_file_b="${WORK}/received-ostara-labs_pia-DEVTOOLS_APP_PRIVATE_KEY.txt"
 
 if [ -f "${or_file_b}" ] && [ "$(cat "${or_file_b}")" = "sk-or-v1-prompt" ]; then

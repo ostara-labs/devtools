@@ -8,7 +8,7 @@
 # Why not read the org secret's value: GitHub secret values are write-only
 # (unreadable via API or UI, even as org admin). The values therefore come
 # from, in order of precedence:
-#   1. the environment (OPENROUTER_API_KEY / DEVTOOLS_APP_PRIVATE_KEY)
+#   1. the environment (AI_REVIEW_OPENROUTER_API_KEY / DEVTOOLS_APP_PRIVATE_KEY)
 #   2. the local secrets store: ~/agent-conventions/secrets.env
 #      (single-line KEY=value or export KEY=value; literal \n become
 #       newlines for multi-line PEM values; override path: SECRETS_FILE=...)
@@ -20,7 +20,7 @@
 # Synced secrets, as SECRET_NAME:STORE_KEY — the name pushed to the repos
 # (fixed by the workflow callers) maps to the namespaced key in the local
 # secrets file:
-#   OPENROUTER_API_KEY        <- GITHUB_AI_REVIEW_OPENROUTER_API_KEY
+#   AI_REVIEW_OPENROUTER_API_KEY <- GITHUB_AI_REVIEW_OPENROUTER_API_KEY
 #   DEVTOOLS_APP_PRIVATE_KEY  <- DEVTOOLS_APP_PRIVATE_KEY
 #
 # Usage:
@@ -37,7 +37,7 @@ ORG="ostara-labs"
 SECRETS_FILE="${SECRETS_FILE:-${HOME}/agent-conventions/secrets.env}"
 DEFAULT_REPOS=(pia bot world-monitor-tui messenger-assistant home)
 SYNCED_SECRETS=(
-	"OPENROUTER_API_KEY:GITHUB_AI_REVIEW_OPENROUTER_API_KEY"
+	"AI_REVIEW_OPENROUTER_API_KEY:GITHUB_AI_REVIEW_OPENROUTER_API_KEY"
 	"DEVTOOLS_APP_PRIVATE_KEY:DEVTOOLS_APP_PRIVATE_KEY"
 )
 
