@@ -1,0 +1,16 @@
+name: Test echo callee
+
+# BISECT PROBE (temporary): minimal workflow_call — no inputs, no
+# permissions, no timeout, no if. Isolates "can pia call a devtools
+# reusable workflow at all" from "is some construct in the real callees
+# rejected by the GitHub parser".
+
+on:
+  workflow_call:
+
+jobs:
+  echo:
+    runs-on: ubuntu-latest
+    steps:
+      - name: echo
+        run: echo "test-echo callee OK"
