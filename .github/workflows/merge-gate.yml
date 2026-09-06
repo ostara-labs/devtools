@@ -90,13 +90,22 @@ jobs:
               | jq -r '[.check_runs[] | select((.name | ascii_downcase) as $n | ($n == "ai-review" or $n == "merge-gate") | not)]'
           }
           RUNS="$(checks)"
+          # Bounded wait: other workflows (pr-meta, classify...) triggered
+          # by the same push may complete AFTER the CI workflow that fired
+          # this gate. Pending checks are "not yet", not "failed".
+          for i in $(seq 1 20); do
+            CI_PEND="$(echo "${RUNS}" | jq '[.[] | select(.status != "completed")] | length')"
+            [ "${CI_PEND}" -eq 0 ] && break
+            echo "waiting for ${CI_PEND} pending CI check(s) (${i}/20)"
+            sleep 30
+            RUNS="$(checks)"
+          done
           CI_FAIL="$(echo "${RUNS}" | jq '[.[] | select(.conclusion != "success" and .conclusion != "skipped")] | length')"
-          CI_PEND="$(echo "${RUNS}" | jq '[.[] | select(.status != "completed")] | length')"
-          if [ "${CI_FAIL}" -gt 0 ] || [ "${CI_PEND}" -gt 0 ]; then
+          if [ "${CI_FAIL}" -gt 0 ]; then
             {
               echo "decision=failure"
               echo "title=CI not green"
-              echo "summary=Condition 1 failed: ${CI_FAIL} failing and ${CI_PEND} pending CI check(s) on this commit."
+              echo "summary=Condition 1 failed: ${CI_FAIL} failing CI check(s) on this commit."
             } >> "$GITHUB_OUTPUT"
             exit 0
           fi
