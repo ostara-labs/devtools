@@ -39,7 +39,7 @@ on:
         type: string
         default: '["openrouter/z-ai/glm-5.3-flash"]'
     secrets:
-      OPENROUTER_API_KEY:
+      AI_REVIEW_OPENROUTER_API_KEY:
         required: true
 
 jobs:
@@ -108,7 +108,7 @@ jobs:
         uses: the-pr-agent/pr-agent@main
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          OPENROUTER.KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER.KEY: ${{ secrets.AI_REVIEW_OPENROUTER_API_KEY }}
           CONFIG.MODEL: ${{ env.MODEL }}
           CONFIG.FALLBACK_MODELS: ${{ env.FALLBACK_MODELS }}
           GITHUB_ACTION_CONFIG.AUTO_REVIEW: 'true'

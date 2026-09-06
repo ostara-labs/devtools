@@ -8,7 +8,7 @@
 # Why not read the org secret's value: GitHub secret values are write-only
 # (unreadable via API or UI, even as org admin). The values therefore come
 # from, in order of precedence:
-#   1. the environment (OPENROUTER_API_KEY / DEVTOOLS_APP_PRIVATE_KEY)
+#   1. the environment (AI_REVIEW_OPENROUTER_API_KEY / DEVTOOLS_APP_PRIVATE_KEY)
 #   2. the local secrets store: ~/agent-conventions/secrets.env
 #      (single-line KEY=value or export KEY=value; literal \n become
 #       newlines for multi-line PEM values; override path: SECRETS_FILE=...)
@@ -17,9 +17,11 @@
 # Values missing from both 1 and 2 are asked on 3; answering empty skips
 # that secret.
 #
-# Synced secrets:
-#   OPENROUTER_API_KEY          — AI review (devtools ai-review.yml callers)
-#   DEVTOOLS_APP_PRIVATE_KEY    — devtools GitHub App
+# Synced secrets, as SECRET_NAME:STORE_KEY — the name pushed to the repos
+# (fixed by the workflow callers) maps to the namespaced key in the local
+# secrets file:
+#   AI_REVIEW_OPENROUTER_API_KEY <- GITHUB_AI_REVIEW_OPENROUTER_API_KEY
+#   DEVTOOLS_APP_PRIVATE_KEY  <- DEVTOOLS_APP_PRIVATE_KEY
 #
 # Usage:
 #   scripts/sync-repo-secrets.sh                # all default repos
@@ -34,7 +36,10 @@ set -euo pipefail
 ORG="ostara-labs"
 SECRETS_FILE="${SECRETS_FILE:-${HOME}/agent-conventions/secrets.env}"
 DEFAULT_REPOS=(pia bot world-monitor-tui messenger-assistant home)
-SYNCED_SECRETS=(OPENROUTER_API_KEY DEVTOOLS_APP_PRIVATE_KEY)
+SYNCED_SECRETS=(
+	"AI_REVIEW_OPENROUTER_API_KEY:GITHUB_AI_REVIEW_OPENROUTER_API_KEY"
+	"DEVTOOLS_APP_PRIVATE_KEY:DEVTOOLS_APP_PRIVATE_KEY"
+)
 
 if [ ! -f "${SECRETS_FILE}" ]; then
 	if [ -t 0 ]; then
@@ -76,14 +81,16 @@ prompt_value() {
 }
 
 synced_any=0
-for name in "${SYNCED_SECRETS[@]}"; do
+for pair in "${SYNCED_SECRETS[@]}"; do
+	name="${pair%%:*}"
+	store_key="${pair#*:}"
 	value="$(printenv "${name}" || true)"
 	if [ -z "${value}" ]; then
-		value="$(from_store "${name}")"
+		value="$(from_store "${store_key}")"
 	fi
-if [ -z "${value}" ]; then
-	value="$(prompt_value "${name}")"
-fi
+	if [ -z "${value}" ]; then
+		value="$(prompt_value "${name}")"
+	fi
 if [ -z "${value}" ]; then
 	continue
 fi
