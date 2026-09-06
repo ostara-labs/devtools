@@ -1,0 +1,8 @@
+# Test fixtures in scripts/test-sync-repo-secrets.sh: fake markers for the
+# sync-secrets validation harness (BEGIN TEST FIXTURE, sk-or-v1-test123).
+# They protect nothing and unlock nothing. The fingerprints below are pinned
+# to commit ffa13c2 where the fixtures briefly used RSA PRIVATE KEY markers;
+# the markers themselves were replaced by 04d8db5, but gitleaks scans the
+# pull-request commit range, so the historical findings stay.
+ffa13c2a228b1bfb91632eaf92ed0b91eba31898:scripts/test-sync-repo-secrets.sh:private-key:37
+ffa13c2a228b1bfb91632eaf92ed0b91eba31898:scripts/test-sync-repo-secrets.sh:private-key:64
