@@ -1,0 +1,194 @@
+name: Merge gate
+
+# Reusable merge-decision gate — the single required check that combines
+# the three merge conditions agreed for ostara-labs:
+#   1. CI passed (the repo's CI workflow, latest run on this head SHA)
+#   2. AI review passed (the review workflow, latest run on this head SHA)
+#   3. no blocking label on the PR (default: "possible security issue")
+#
+# Rendez-vous WITHOUT polling: the caller triggers this workflow on the
+# completion of EITHER the CI or the review workflow (plus on `unlabeled`
+# for the deliberate-override path). Each firing makes one status query
+# per sibling workflow and:
+#   - a sibling still running  -> exit silently: the merge-gate check is
+#     left ABSENT, which blocks the merge until the last sibling's
+#     completion fires this gate again (a missing required check never
+#     reports, so nothing can slip through)
+#   - both terminal            -> one completed "merge-gate" check run is
+#     created on the head SHA with the verdict and the reasons
+#
+# The check run is created via the API (not a job) because workflow_run
+# runs are not attached to the PR head SHA.
+
+on:
+  workflow_call:
+    inputs:
+      head-sha:
+        description: 'PR head SHA (from the triggering workflow_run event)'
+        required: false
+        type: string
+        default: ''
+      pr-number:
+        description: 'PR number (alternative to head-sha, e.g. label-triggered runs)'
+        required: false
+        type: string
+        default: ''
+      ci-workflow:
+        description: 'Name of the repo CI workflow to wait for'
+        required: false
+        type: string
+        default: 'CI'
+      review-workflow:
+        description: 'Name of the AI review workflow to wait for'
+        required: false
+        type: string
+        default: 'AI review'
+      blocking-labels:
+        description: 'JSON array of PR labels that block the merge'
+        required: false
+        type: string
+        default: '["possible security issue"]'
+
+jobs:
+  gate:
+    name: gate-dispatch
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      checks: write
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Resolve PR context
+        id: ctx
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ inputs.head-sha }}
+          PR_NUMBER: ${{ inputs.pr-number }}
+        run: |
+          set -euo pipefail
+          # No PR (push to main, closed PR): nothing to gate — exit without
+          # creating any check.
+          if [ -n "${HEAD_SHA}" ] && [ "${HEAD_SHA}" != "null" ]; then
+            PR_NUMBER="$(gh api "repos/${REPO}/commits/${HEAD_SHA}/pulls" --jq '[.[] | select(.state == "open")][0].number // ""')"
+          fi
+          if [ -z "${PR_NUMBER}" ] || [ "${PR_NUMBER}" = "null" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          PR_JSON="$(gh api "repos/${REPO}/pulls/${PR_NUMBER}")"
+          {
+            echo "skip=false"
+            echo "pr=${PR_NUMBER}"
+            echo "head_sha=$(echo "${PR_JSON}" | jq -r .head.sha)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Evaluate merge conditions
+        id: eval
+        if: steps.ctx.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ steps.ctx.outputs.head_sha }}
+          CI_WORKFLOW: ${{ inputs.ci-workflow }}
+          REVIEW_WORKFLOW: ${{ inputs.review-workflow }}
+          BLOCKING_LABELS: ${{ inputs.blocking-labels }}
+          PR: ${{ steps.ctx.outputs.pr }}
+        run: |
+          set -euo pipefail
+          # Latest run of a workflow on this exact head SHA (API returns
+          # newest first). status: queued|in_progress|completed.
+          latest_run() {
+            # shellcheck disable=SC2016  # $name is a jq variable bound by --arg
+            gh api "repos/${REPO}/actions/runs?head_sha=${HEAD_SHA}&per_page=100" \
+              --jq --arg name "$1" \
+              '.workflow_runs | map(select(.workflow_name == $name)) | .[0] // ""'
+          }
+          CI_RUN="$(latest_run "${CI_WORKFLOW}")"
+          REVIEW_RUN="$(latest_run "${REVIEW_WORKFLOW}")"
+
+          wait_on() {
+            {
+              echo "decision=wait"
+              echo "title=waiting for $1"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+
+          if [ -z "${CI_RUN}" ] || [ "$(echo "${CI_RUN}" | jq -r .status)" != "completed" ]; then
+            wait_on "CI"
+          fi
+          CI_CONCLUSION="$(echo "${CI_RUN}" | jq -r .conclusion)"
+          if [ "${CI_CONCLUSION}" != "success" ]; then
+            {
+              echo "decision=failure"
+              echo "title=CI ${CI_CONCLUSION}"
+              echo "summary=Condition 1 failed: the latest ${CI_WORKFLOW} run on $(echo "${CI_RUN}" | jq -r .head_sha | cut -c1-7) concluded ${CI_CONCLUSION}. See $(echo "${CI_RUN}" | jq -r .html_url)."
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ -z "${REVIEW_RUN}" ]; then
+            {
+              echo "decision=failure"
+              echo "title=review never ran"
+              echo "summary=Condition 2 failed: no ${REVIEW_WORKFLOW} run exists on this commit although CI succeeded. Check that the review caller listens to the CI workflow completion."
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$(echo "${REVIEW_RUN}" | jq -r .status)" != "completed" ]; then
+            wait_on "review"
+          fi
+          REVIEW_CONCLUSION="$(echo "${REVIEW_RUN}" | jq -r .conclusion)"
+          if [ "${REVIEW_CONCLUSION}" != "success" ]; then
+            {
+              echo "decision=failure"
+              echo "title=review ${REVIEW_CONCLUSION}"
+              echo "summary=Condition 2 failed: the latest ${REVIEW_WORKFLOW} run concluded ${REVIEW_CONCLUSION}. See $(echo "${REVIEW_RUN}" | jq -r .html_url)."
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          LABELS="$(gh api "repos/${REPO}/pulls/${PR}" --jq '[.labels[].name]')"
+          HIT="$(echo "${LABELS}" | jq -r --argjson blocking "${BLOCKING_LABELS}" \
+            '[.[] | select(. as $l | $blocking | index($l))] | length')"
+          if [ "${HIT}" -gt 0 ]; then
+            {
+              echo "decision=failure"
+              echo "title=blocking label present"
+              echo "summary=Condition 3 failed: blocking label(s) ${LABELS} on the PR. Fix the findings, or remove the label to record a deliberate override."
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          {
+            echo "decision=success"
+            echo "title=all three conditions met"
+            echo "summary<<SUMMARY_EOF"
+            echo "Mergeable:"
+            echo "- CI ${CI_WORKFLOW}: success ($(echo "${CI_RUN}" | jq -r .html_url))"
+            echo "- ${REVIEW_WORKFLOW}: success ($(echo "${REVIEW_RUN}" | jq -r .html_url))"
+            echo "- no blocking label (checked: ${BLOCKING_LABELS})"
+            echo "SUMMARY_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Report merge-gate check
+        if: steps.ctx.outputs.skip != 'true' && steps.eval.outputs.decision != 'wait'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ steps.ctx.outputs.head_sha }}
+          DECISION: ${{ steps.eval.outputs.decision }}
+          TITLE: ${{ steps.eval.outputs.title }}
+          SUMMARY: ${{ steps.eval.outputs.summary }}
+        run: |
+          set -euo pipefail
+          jq -n --arg sha "${HEAD_SHA}" \
+                --arg conclusion "${DECISION}" \
+                --arg title "${TITLE}" \
+                --arg summary "${SUMMARY}" \
+                '{name: "merge-gate", head_sha: $sha, status: "completed",
+                  conclusion: $conclusion,
+                  output: {title: $title, summary: $summary}}' \
+          | gh api "repos/${REPO}/check-runs" --input -
