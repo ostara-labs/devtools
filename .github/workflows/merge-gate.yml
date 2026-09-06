@@ -7,15 +7,15 @@ name: Merge gate
 #   3. no blocking label on the PR (default: "possible security issue",
 #      "size/too-big" — removed by an authorized human = audited override)
 #
-# Rendez-vous WITHOUT polling: the caller triggers this workflow on the
-# completion of EITHER the CI or the review workflow (plus on `unlabeled`
-# for the deliberate-override path). Each firing makes one status query
-# per sibling workflow and:
-#   - a sibling still running  -> exit silently: the merge-gate check is
-#     left ABSENT, which blocks the merge until the last sibling's
-#     completion fires this gate again (a missing required check never
-#     reports, so nothing can slip through)
-#   - both terminal            -> one completed "merge-gate" check run is
+# Rendez-vous WITHOUT cross-context lookups: the caller fires this gate
+# when the repo's CI workflow completes (on a pull_request run) and on
+# `unlabeled`. The CI checks and the ai-review check both exist as check
+# runs ON the PR head SHA (the review publishes its own `ai-review`
+# check), so every verdict input is read from the head SHA itself:
+#   - a review check not completed yet -> exit silently: the merge-gate
+#     check is left ABSENT, which blocks the merge until the review
+#     publishes (a missing required check never reports)
+#   - everything terminal -> one completed "merge-gate" check run is
 #     created on the head SHA with the verdict and the reasons
 #
 # The check run is created via the API (not a job) because workflow_run
@@ -24,26 +24,11 @@ name: Merge gate
 on:
   workflow_call:
     inputs:
-      head-sha:
-        description: 'PR head SHA (from the triggering workflow_run event)'
+      head-branch:
+        description: 'PR head branch (from the triggering workflow_run event)'
         required: false
         type: string
         default: ''
-      pr-number:
-        description: 'PR number (alternative to head-sha, e.g. label-triggered runs)'
-        required: false
-        type: string
-        default: ''
-      ci-workflow:
-        description: 'Name of the repo CI workflow to wait for'
-        required: false
-        type: string
-        default: 'CI'
-      review-workflow:
-        description: 'Name of the AI review workflow to wait for'
-        required: false
-        type: string
-        default: 'AI review'
       blocking-labels:
         description: 'JSON array of PR labels that block the merge'
         required: false
@@ -54,7 +39,7 @@ jobs:
   gate:
     name: gate-dispatch
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     permissions:
       checks: write
       contents: read
@@ -65,14 +50,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          HEAD_SHA: ${{ inputs.head-sha }}
-          PR_NUMBER: ${{ inputs.pr-number }}
+          HEAD_BRANCH: ${{ inputs.head-branch }}
         run: |
           set -euo pipefail
           # No PR (push to main, closed PR): nothing to gate — exit without
           # creating any check.
-          if [ -n "${HEAD_SHA}" ] && [ "${HEAD_SHA}" != "null" ]; then
-            PR_NUMBER="$(gh api "repos/${REPO}/commits/${HEAD_SHA}/pulls" --jq '[.[] | select(.state == "open")][0].number // ""')"
+          if [ -n "${HEAD_BRANCH}" ] && [ "${HEAD_BRANCH}" != "null" ]; then
+            PR_NUMBER="$(gh api "repos/${REPO}/pulls?head=${REPO%%/*}:${HEAD_BRANCH}&state=open" --jq '.[0].number // ""')"
           fi
           if [ -z "${PR_NUMBER}" ] || [ "${PR_NUMBER}" = "null" ]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
@@ -92,65 +76,63 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           HEAD_SHA: ${{ steps.ctx.outputs.head_sha }}
-          CI_WORKFLOW: ${{ inputs.ci-workflow }}
-          REVIEW_WORKFLOW: ${{ inputs.review-workflow }}
           BLOCKING_LABELS: ${{ inputs.blocking-labels }}
           PR: ${{ steps.ctx.outputs.pr }}
         run: |
           set -euo pipefail
-          # Latest run of a workflow on this exact head SHA (API returns
-          # newest first). status: queued|in_progress|completed.
-          latest_run() {
-            # shellcheck disable=SC2016  # $name is a jq variable bound by --arg
-            gh api "repos/${REPO}/actions/runs?head_sha=${HEAD_SHA}&per_page=100" \
-              --jq --arg name "$1" \
-              '.workflow_runs | map(select(.workflow_name == $name)) | .[0] // ""'
+          # 1. CI condition: every check on the head SHA except our own
+          #    (ai-review / merge-gate) is completed and success/skipped.
+          #    The caller fires this gate when the CI workflow completes,
+          #    so CI is terminal by construction — this re-check makes the
+          #    verdict robust against extra firings.
+          checks() {
+            gh api "repos/${REPO}/commits/${HEAD_SHA}/check-runs?per_page=100" \
+              | jq -r '[.check_runs[] | select((.name | ascii_downcase) as $n | ($n == "ai-review" or $n == "merge-gate") | not)]'
           }
-          CI_RUN="$(latest_run "${CI_WORKFLOW}")"
-          REVIEW_RUN="$(latest_run "${REVIEW_WORKFLOW}")"
-
-          wait_on() {
-            {
-              echo "decision=wait"
-              echo "title=waiting for $1"
-            } >> "$GITHUB_OUTPUT"
-            exit 0
-          }
-
-          if [ -z "${CI_RUN}" ] || [ "$(echo "${CI_RUN}" | jq -r .status)" != "completed" ]; then
-            wait_on "CI"
-          fi
-          CI_CONCLUSION="$(echo "${CI_RUN}" | jq -r .conclusion)"
-          if [ "${CI_CONCLUSION}" != "success" ]; then
+          RUNS="$(checks)"
+          CI_FAIL="$(echo "${RUNS}" | jq '[.[] | select(.conclusion != "success" and .conclusion != "skipped")] | length')"
+          CI_PEND="$(echo "${RUNS}" | jq '[.[] | select(.status != "completed")] | length')"
+          if [ "${CI_FAIL}" -gt 0 ] || [ "${CI_PEND}" -gt 0 ]; then
             {
               echo "decision=failure"
-              echo "title=CI ${CI_CONCLUSION}"
-              echo "summary=Condition 1 failed: the latest ${CI_WORKFLOW} run on $(echo "${CI_RUN}" | jq -r .head_sha | cut -c1-7) concluded ${CI_CONCLUSION}. See $(echo "${CI_RUN}" | jq -r .html_url)."
+              echo "title=CI not green"
+              echo "summary=Condition 1 failed: ${CI_FAIL} failing and ${CI_PEND} pending CI check(s) on this commit."
             } >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          if [ -z "${REVIEW_RUN}" ]; then
+          # 2. Review condition: wait (bounded) for the ai-review check on
+          #    this head SHA. The caller fires the gate on CI completion,
+          #    which is BEFORE the review finishes — the absence of the
+          #    check means "not yet", never "failed".
+          for i in $(seq 1 26); do
+            AI_CHECK="$(gh api "repos/${REPO}/commits/${HEAD_SHA}/check-runs?per_page=100" \
+              | jq -r '[.check_runs[] | select((.name | ascii_downcase) == "ai-review")][0] // ""')"
+            if [ -n "${AI_CHECK}" ] && [ "$(echo "${AI_CHECK}" | jq -r .status)" = "completed" ]; then
+              break
+            fi
+            echo "waiting for the ai-review check (${i}/26)"
+            sleep 30
+          done
+          if [ -z "${AI_CHECK}" ] || [ "$(echo "${AI_CHECK}" | jq -r .status)" != "completed" ]; then
             {
               echo "decision=failure"
-              echo "title=review never ran"
-              echo "summary=Condition 2 failed: no ${REVIEW_WORKFLOW} run exists on this commit although CI succeeded. Check that the review caller listens to the CI workflow completion."
+              echo "title=review did not complete in time"
+              echo "summary=Condition 2 failed: the ai-review check did not complete within the gate window (~13 min). Re-run this check once the review lands."
             } >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if [ "$(echo "${REVIEW_RUN}" | jq -r .status)" != "completed" ]; then
-            wait_on "review"
-          fi
-          REVIEW_CONCLUSION="$(echo "${REVIEW_RUN}" | jq -r .conclusion)"
-          if [ "${REVIEW_CONCLUSION}" != "success" ]; then
+          AI_CONCLUSION="$(echo "${AI_CHECK}" | jq -r '.conclusion // "failure"')"
+          if [ "${AI_CONCLUSION}" != "success" ]; then
             {
               echo "decision=failure"
-              echo "title=review ${REVIEW_CONCLUSION}"
-              echo "summary=Condition 2 failed: the latest ${REVIEW_WORKFLOW} run concluded ${REVIEW_CONCLUSION}. See $(echo "${REVIEW_RUN}" | jq -r .html_url)."
+              echo "title=review ${AI_CONCLUSION}"
+              echo "summary=Condition 2 failed: the ai-review check concluded ${AI_CONCLUSION}."
             } >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
+          # 3. Blocking-label condition.
           LABELS="$(gh api "repos/${REPO}/pulls/${PR}" --jq '[.labels[].name]')"
           HIT="$(echo "${LABELS}" | jq -r --argjson blocking "${BLOCKING_LABELS}" \
             '[.[] | select(. as $l | $blocking | index($l))] | length')"
@@ -167,10 +149,7 @@ jobs:
             echo "decision=success"
             echo "title=all three conditions met"
             echo "summary<<SUMMARY_EOF"
-            echo "Mergeable:"
-            echo "- CI ${CI_WORKFLOW}: success ($(echo "${CI_RUN}" | jq -r .html_url))"
-            echo "- ${REVIEW_WORKFLOW}: success ($(echo "${REVIEW_RUN}" | jq -r .html_url))"
-            echo "- no blocking label (checked: ${BLOCKING_LABELS})"
+            echo "Mergeable: CI green + AI review done + no blocking label."
             echo "SUMMARY_EOF"
           } >> "$GITHUB_OUTPUT"
 

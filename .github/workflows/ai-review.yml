@@ -18,8 +18,8 @@ name: AI review
 on:
   workflow_call:
     inputs:
-      head-sha:
-        description: 'PR head SHA (from the triggering workflow_run event)'
+      head-branch:
+        description: 'PR head branch (from the triggering workflow_run event)'
         required: false
         type: string
         default: ''
@@ -57,7 +57,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          HEAD_SHA: ${{ inputs.head-sha }}
+          HEAD_BRANCH: ${{ inputs.head-branch }}
           PR_NUMBER: ${{ inputs.pr-number }}
           MODEL_INPUT: ${{ inputs.model }}
           FALLBACK_INPUT: ${{ inputs.fallback-models }}
@@ -65,13 +65,14 @@ jobs:
           set -euo pipefail
           # Every exit path is a graceful skip: this workflow makes no
           # merge decision, so silence is safe — merge-gate.yml decides.
-          if [ -n "${HEAD_SHA}" ] && [ "${HEAD_SHA}" != "null" ]; then
-            # Find the open PR carrying this exact head SHA.
-            PR_NUMBER="$(gh api "repos/${REPO}/commits/${HEAD_SHA}/pulls" --jq '[.[] | select(.state == "open")][0].number // ""')"
+          if [ -n "${HEAD_BRANCH}" ] && [ "${HEAD_BRANCH}" != "null" ]; then
+            # Find the open PR for this head branch (the caller passes the
+            # branch of the triggering CI run — stable across contexts).
+            PR_NUMBER="$(gh api "repos/${REPO}/pulls?head=${REPO%%/*}:${HEAD_BRANCH}&state=open" --jq '.[0].number // ""')"
           fi
           if [ -z "${PR_NUMBER}" ] || [ "${PR_NUMBER}" = "null" ]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "reason=No open PR for this commit (push to a branch or main)" >> "$GITHUB_OUTPUT"
+            echo "reason=No open PR for this branch (push to a branch or main)" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           PR_JSON="$(gh api "repos/${REPO}/pulls/${PR_NUMBER}")"
@@ -115,3 +116,23 @@ jobs:
           GITHUB_ACTION_CONFIG.AUTO_DESCRIBE: 'false'
           GITHUB_ACTION_CONFIG.AUTO_IMPROVE: 'false'
           GITHUB_ACTION_CONFIG.PR_ACTIONS: '["opened", "reopened", "ready_for_review", "synchronize"]'
+
+      - name: Publish ai-review check
+        if: steps.ctx.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ steps.ctx.outputs.head_sha }}
+        run: |
+          set -euo pipefail
+          # The review's terminal state, published as a check on the PR
+          # head SHA. merge-gate.yml waits for THIS check (workflow_run
+          # runs live in the default-branch context — their head_sha is
+          # NOT the PR head, so run-based lookups cannot be used).
+          jq -n --arg sha "${HEAD_SHA}" \
+                '{name: "ai-review", head_sha: $sha, status: "completed",
+                  conclusion: "success",
+                  output: {title: "review completed",
+                           summary: "PR-Agent posted its review on this PR."}}' \
+          | gh api "repos/${REPO}/check-runs" --input - >/dev/null
+          echo "ai-review check published on ${HEAD_SHA}"
