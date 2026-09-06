@@ -38,7 +38,7 @@ trap cleanup EXIT
 # so gitleaks' private-key rule does not flag this file — they protect
 # nothing and unlock nothing.
 SECF="${WORK}/secrets.env"
-printf 'OPENROUTER_API_KEY=sk-or-v1-test123\r\n' > "${SECF}"
+printf 'GITHUB_AI_REVIEW_OPENROUTER_API_KEY=sk-or-v1-test123\r\n' > "${SECF}"
 printf 'export DEVTOOLS_APP_PRIVATE_KEY="-----BEGIN TEST FIXTURE-----\\nMIIEline1\\nMIIEline2\\n-----END TEST FIXTURE-----"\n' >> "${SECF}"
 
 SECRETS_FILE="${SECF}" PATH="${STUB}:${PATH}" bash "${SCRIPT_DIR}/sync-repo-secrets.sh" pia >/dev/null
