@@ -1,0 +1,17 @@
+name: Test c3 step-if
+
+# BISECT C3 (temporary): echo callee + a step-level if only.
+
+on:
+  workflow_call:
+
+jobs:
+  echo:
+    runs-on: ubuntu-latest
+    steps:
+      - name: produce
+        id: e
+        run: echo "x=false" >> "$GITHUB_OUTPUT"
+      - name: conditional
+        if: steps.e.outputs.x != 'true'
+        run: echo "c3 ok"

@@ -1,0 +1,18 @@
+name: Test c2 secrets
+
+# BISECT C2 (temporary): echo callee + workflow_call secrets block only.
+
+on:
+  workflow_call:
+    secrets:
+      AI_REVIEW_OPENROUTER_API_KEY:
+        required: true
+
+jobs:
+  echo:
+    runs-on: ubuntu-latest
+    steps:
+      - name: echo
+        env:
+          PROBE: ${{ secrets.AI_REVIEW_OPENROUTER_API_KEY }}
+        run: echo "c2 ok (secret length: ${#PROBE})"

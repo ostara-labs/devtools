@@ -1,0 +1,14 @@
+name: Test c1 timeout
+
+# BISECT C1 (temporary): echo callee + job-level timeout-minutes only.
+
+on:
+  workflow_call:
+
+jobs:
+  echo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: echo
+        run: echo "c1 ok"
