@@ -112,6 +112,12 @@ jobs:
           OPENROUTER.KEY: ${{ secrets.AI_REVIEW_OPENROUTER_API_KEY }}
           CONFIG.MODEL: ${{ env.MODEL }}
           CONFIG.FALLBACK_MODELS: ${{ env.FALLBACK_MODELS }}
+          # Persistent finding state requires a verifiable GitHub user
+          # identity, which the Actions token cannot provide — PR-Agent
+          # exits 1 on it (observed 2026-09-07). Off org-wide; consumers
+          # can re-enable per repo in .pr_agent.toml if they ever run the
+          # review with a full GitHub App identity.
+          PR_REVIEWER.PERSISTENT_FINDING_STATE: 'false'
           GITHUB_ACTION_CONFIG.AUTO_REVIEW: 'true'
           GITHUB_ACTION_CONFIG.AUTO_DESCRIBE: 'false'
           GITHUB_ACTION_CONFIG.AUTO_IMPROVE: 'false'
