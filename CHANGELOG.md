@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.0](https://github.com/ostara-labs/devtools/compare/v1.8.0...v1.9.0) (2026-09-06)
+
+
+### Features
+
+* **ci:** add reusable ai-review workflow (PR-Agent + OpenRouter) ([#40](https://github.com/ostara-labs/devtools/issues/40)) ([75d4c45](https://github.com/ostara-labs/devtools/commit/75d4c454a660243616f32e8d2b67b3603f38119b))
+
 ## [1.8.0](https://github.com/ostara-labs/devtools/compare/v1.7.0...v1.8.0) (2026-09-05)
 
 
