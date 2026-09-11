@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.11.0](https://github.com/ostara-labs/devtools/compare/v1.10.0...v1.11.0) (2026-09-11)
+
+
+### Features
+
+* **ci:** collapse the review chain into the PR pipeline DAG ([#45](https://github.com/ostara-labs/devtools/issues/45)) ([8392220](https://github.com/ostara-labs/devtools/commit/8392220f7c5785b74373d6ea4f43a1d291c8f8aa))
+
 ## [1.10.0](https://github.com/ostara-labs/devtools/compare/v1.9.0...v1.10.0) (2026-09-11)
 
 
