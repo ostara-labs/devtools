@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.10.0](https://github.com/ostara-labs/devtools/compare/v1.9.0...v1.10.0) (2026-09-11)
+
+
+### Features
+
+* **hooks:** reject a staged file with a shebang but no executable bit ([#44](https://github.com/ostara-labs/devtools/issues/44)) ([67c0467](https://github.com/ostara-labs/devtools/commit/67c046782c5ce42dd096e5bdc352e36d9d053f69))
+
+
+### Bug Fixes
+
+* **ci:** repair gate skip handling and pr-meta credentials ([#42](https://github.com/ostara-labs/devtools/issues/42)) ([6428b0f](https://github.com/ostara-labs/devtools/commit/6428b0f3e47fddaf75c80f1d6966e3bd078e5304))
+
 ## [1.9.0](https://github.com/ostara-labs/devtools/compare/v1.8.0...v1.9.0) (2026-09-06)
 
 
