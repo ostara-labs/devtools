@@ -1,40 +1,24 @@
 name: AI review
 
-# Reusable AI PR-reviewer (PR-Agent + OpenRouter) — review ONLY, no merge
-# decision. The merge decision lives in merge-gate.yml (rendez-vous of CI
-# and this workflow + blocking labels), consumed by a thin caller per repo
-# — same convergence model as ci.yml / pr-meta.yml.
+# Reusable AI PR-reviewer (PR-Agent + OpenRouter). Called as a DAG job by
+# the consumer's PR pipeline AFTER its CI job succeeded — the caller's
+# pull_request event flows through verbatim (github.event.pull_request
+# is the PR), so there is no context passing, no check-run publication
+# and no polling: this workflow only runs PR-Agent.
 #
-# Contract (agreed 2026-09-06/07, replaces CodeRabbit on ostara-labs):
-#   - the CALLER triggers this via `workflow_run` on the repo's CI — it
-#     starts only when CI has completed, so no polling and no compute
-#     spent on waiting
-#   - only non-draft open PRs are reviewed (drafts cost zero model spend)
-#   - reviewer calibration is per repo, in .pr_agent.toml (repo AGENTS.md
-#     at the root is picked up automatically); model routing is an input
-#
-# Blocking labels are NOT checked here — merge-gate.yml owns them.
+# Reviewer calibration is per repo, in .pr_agent.toml at the repo root
+# (AGENTS.md is picked up automatically). Model routing is an input.
 
 on:
   workflow_call:
     inputs:
-      head-sha:
-        description: 'PR head SHA (from the triggering workflow_run event)'
-        required: false
-        type: string
-        default: ''
-      pr-number:
-        description: 'PR number (alternative to head-sha, e.g. label-triggered runs)'
-        required: false
-        type: string
-        default: ''
       model:
-        description: 'Primary model (LiteLLM notation). Empty = default below.'
+        description: 'Primary model (LiteLLM notation)'
         required: false
         type: string
         default: 'openrouter/deepseek/deepseek-v4-flash'
       fallback-models:
-        description: 'JSON array of fallback models. Empty = default below.'
+        description: 'JSON array of fallback models'
         required: false
         type: string
         default: '["openrouter/z-ai/glm-5.3-flash"]'
@@ -52,65 +36,23 @@ jobs:
       issues: write
       pull-requests: write
     steps:
-      - name: Resolve PR context
-        id: ctx
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          HEAD_SHA: ${{ inputs.head-sha }}
-          PR_NUMBER: ${{ inputs.pr-number }}
-          MODEL_INPUT: ${{ inputs.model }}
-          FALLBACK_INPUT: ${{ inputs.fallback-models }}
-        run: |
-          set -euo pipefail
-          # Every exit path is a graceful skip: this workflow makes no
-          # merge decision, so silence is safe — merge-gate.yml decides.
-          if [ -n "${HEAD_SHA}" ] && [ "${HEAD_SHA}" != "null" ]; then
-            # Find the open PR carrying this exact head SHA.
-            PR_NUMBER="$(gh api "repos/${REPO}/commits/${HEAD_SHA}/pulls" --jq '[.[] | select(.state == "open")][0].number // ""')"
-          fi
-          if [ -z "${PR_NUMBER}" ] || [ "${PR_NUMBER}" = "null" ]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "reason=No open PR for this commit (push to a branch or main)" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          PR_JSON="$(gh api "repos/${REPO}/pulls/${PR_NUMBER}")"
-          DRAFT="$(echo "${PR_JSON}" | jq -r .draft)"
-          STATE="$(echo "${PR_JSON}" | jq -r .state)"
-          if [ "${DRAFT}" != "false" ] || [ "${STATE}" != "open" ]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "reason=PR is a draft (${DRAFT}) or not open (${STATE})" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          {
-            echo "skip=false"
-            echo "pr=${PR_NUMBER}"
-            echo "head_sha=$(echo "${PR_JSON}" | jq -r .head.sha)"
-          } >> "$GITHUB_OUTPUT"
-          # Model routing: explicit input wins, else the defaults above.
-          if [ -n "${MODEL_INPUT}" ]; then
-            echo "MODEL=${MODEL_INPUT}" >> "$GITHUB_ENV"
-          else
-            echo "MODEL=openrouter/deepseek/deepseek-v4-flash" >> "$GITHUB_ENV"
-          fi
-          if [ -n "${FALLBACK_INPUT}" ]; then
-            echo "FALLBACK_MODELS=${FALLBACK_INPUT}" >> "$GITHUB_ENV"
-          else
-            echo "FALLBACK_MODELS=[\"openrouter/z-ai/glm-5.3-flash\"]" >> "$GITHUB_ENV"
-          fi
-
       - name: Run PR-Agent review
-        if: steps.ctx.outputs.skip != 'true'
+        uses: the-pr-agent/pr-agent@main
         # Expressions are not allowed in a step-level `uses:` — the ref is
         # hardcoded. Pin for production with the Docker form instead:
         #   uses: docker://pragent/pr-agent:<version>-github_action
         # (digest-pinnable, GitHub Artifact Attestations verifiable).
-        uses: the-pr-agent/pr-agent@main
         env:
           GITHUB_TOKEN: ${{ github.token }}
           OPENROUTER.KEY: ${{ secrets.AI_REVIEW_OPENROUTER_API_KEY }}
-          CONFIG.MODEL: ${{ env.MODEL }}
-          CONFIG.FALLBACK_MODELS: ${{ env.FALLBACK_MODELS }}
+          CONFIG.MODEL: ${{ inputs.model != '' && inputs.model || 'openrouter/deepseek/deepseek-v4-flash' }}
+          CONFIG.FALLBACK_MODELS: ${{ inputs.fallback-models != '' && inputs.fallback-models || '["openrouter/z-ai/glm-5.3-flash"]' }}
+          # Persistent finding state requires a verifiable GitHub user
+          # identity, which the Actions token cannot provide — PR-Agent
+          # exits 1 on it (observed 2026-09-07). Off org-wide; consumers
+          # can re-enable per repo in .pr_agent.toml if they ever run the
+          # review with a full GitHub App identity.
+          PR_REVIEWER.PERSISTENT_FINDING_STATE: 'false'
           GITHUB_ACTION_CONFIG.AUTO_REVIEW: 'true'
           GITHUB_ACTION_CONFIG.AUTO_DESCRIBE: 'false'
           GITHUB_ACTION_CONFIG.AUTO_IMPROVE: 'false'
