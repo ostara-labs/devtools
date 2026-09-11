@@ -6,8 +6,12 @@ name: AI review
 # is the PR), so there is no context passing, no check-run publication
 # and no polling: this workflow only runs PR-Agent.
 #
-# Reviewer calibration is per repo, in .pr_agent.toml at the repo root
-# (AGENTS.md is picked up automatically). Model routing is an input.
+# Tools: /review (summary findings + merge recommendation + labels) and
+# /improve (anchored, committable inline suggestions above the score
+# threshold). Reviewer calibration is org-wide in
+# ostara-labs/pr-agent-settings/.pr_agent.toml, overridable per repo in
+# a local .pr_agent.toml (AGENTS.md is picked up automatically). Model
+# routing is an input.
 
 on:
   workflow_call:
@@ -55,5 +59,8 @@ jobs:
           PR_REVIEWER.PERSISTENT_FINDING_STATE: 'false'
           GITHUB_ACTION_CONFIG.AUTO_REVIEW: 'true'
           GITHUB_ACTION_CONFIG.AUTO_DESCRIBE: 'false'
-          GITHUB_ACTION_CONFIG.AUTO_IMPROVE: 'false'
+          # /improve publishes anchored, committable suggestions above the
+          # score threshold as inline review threads (config lives in the
+          # org-wide ostara-labs/pr-agent-settings .pr_agent.toml).
+          GITHUB_ACTION_CONFIG.AUTO_IMPROVE: 'true'
           GITHUB_ACTION_CONFIG.PR_ACTIONS: '["opened", "reopened", "ready_for_review", "synchronize"]'
