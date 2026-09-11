@@ -14,6 +14,7 @@
 #   16. No staged file > 500 KB
 #   17. Staged .yml/.yaml parse cleanly (graceful skip without PyYAML)
 #   18. Staged .toml parse cleanly (graceful skip without python >= 3.11)
+#   19. A staged file starting with a shebang is executable
 #
 # Enforces (Rust):
 #   5. No unwrap()/expect() outside #[cfg(test)] (rust-style.md § rule 1)
@@ -389,6 +390,22 @@ if [ -n "$PY" ]; then
     done
   fi
 fi
+
+# --- 19. Shebang without the executable bit ---
+# A file whose content starts with #! is invoked as a command somewhere — a
+# core.hooksPath entry, a cron line, another script. Committed 100644 it dies
+# with "Permission denied", and silently so when the caller is built to never
+# error; a git hook that git refuses to run leaves no trace at all.
+# The test is the shebang, not the extension: scripts/install.ps1 has none and
+# stays 100644 on purpose.
+for file in "${STAGED_FILES[@]}"; do
+  staged_mode=$(git ls-files --stage -- "$file" 2>/dev/null | cut -d' ' -f1 || true)
+  [ "$staged_mode" = "100644" ] || continue
+  first_two=$(git show ":$file" 2>/dev/null | head -c 2 || true)
+  if [ "$first_two" = '#!' ]; then
+    fail "$file starts with a shebang but is staged 100644. Run: chmod +x \"$file\" && git add \"$file\""
+  fi
+done
 
 # --- Result ---
 if [ "$EXIT_CODE" -eq 0 ]; then
