@@ -14,7 +14,7 @@ Shared git hooks, Makefiles, ONE aggregate CI workflow, lint configs, drift-scan
 |---|---|---|
 | `hooks/` | Git hooks: pre-commit (secrets, file size, lint patterns, hygiene), pre-push (clippy, tests, miri, no-commit-to-branch), commit-msg (format) | `git config core.hooksPath .devtools/hooks` (relative path — set by `make hooks` or `install.sh`) |
 | `makefiles/` | Standard targets: `make lint`, `make test`, `make build`, `make ci`, `make format`, `make hooks`, `make devtools-update` | `include .devtools/makefiles/Makefile.<lang>` |
-| `workflows/ci.yml` | THE org aggregate CI: one caller line per repo, six required contexts, language jobs auto-detect + succeed vacuously when a stack is absent. Pinned by digest, bumped per release. | `uses: ostara-labs/devtools/.github/workflows/ci.yml@<digest> # vX.Y.Z` |
+| `workflows/ci.yml` | THE org aggregate CI: one caller line per repo, seven required contexts, language jobs auto-detect + succeed vacuously when a stack is absent. Pinned by digest, bumped per release. | `uses: ostara-labs/devtools/.github/workflows/ci.yml@<digest> # vX.Y.Z` |
 | `workflows/drift-scan.yml` | Weekly conformance audit of every org repo (submodule gitlink + workflow refs vs latest release); red run + rolling tracking issue on drift. GitHub App auth (preferred) or `ORG_AUDIT_TOKEN` PAT — see [Drift-scan setup](#drift-scan-setup). | Org-level scheduled workflow |
 | `default.json` | Org Renovate preset: git-submodules + github-actions managers, automerge scoped to `.devtools` submodule and `ostara-labs/devtools/*` refs. | `extends ["github>ostara-labs/devtools"]` in `renovate.json` |
 | `configs/` | Shared lint configs: clippy.toml, rustfmt.toml, biome.json, plus seeded `.gitleaks.toml` and `.coderabbit.yaml` via `install.sh` | Symlink or copy into repo root |
@@ -50,16 +50,17 @@ Updates: `make devtools-update` + move the caller `@SHA` to the matching tag com
 
 ## Required status contexts
 
-Every repo using the aggregate CI MUST expose exactly these six status contexts to branch rulesets. Absent language stacks succeed vacuously, so a repo with only Rust still passes all six.
+Every repo using the aggregate CI MUST expose exactly these seven status contexts to branch rulesets. Absent language stacks succeed vacuously, so a repo with only Rust still passes all seven.
 
 | Context | Purpose |
 |---|---|
-| `gate / core` | Shared checks (secrets scan, file size, commit-msg format) |
-| `gate / rust / rust` | Rust stack: fmt, clippy, test, build |
-| `gate / elixir / elixir` | Elixir stack: format, credo, test, build |
-| `gate / typescript / typescript` | TypeScript stack: biome, test, build |
-| `gate / python / python` | Python stack: ruff, pytest, build |
-| `gate / gate` | Final aggregation + artifact gate |
+| `ci / core` | Shared checks (secrets scan, file size, commit-msg format) |
+| `ci / rust / rust` | Rust stack: fmt, clippy, test, build |
+| `ci / elixir / elixir` | Elixir stack: format, credo, test, build |
+| `ci / typescript / typescript` | TypeScript stack: biome, test, build |
+| `ci / python / python` | Python stack: ruff, pytest, build |
+| `ci / docs-drift / Docs drift (DOC_MAP)` | Docs-drift gate: mapped code must ship with its docs |
+| `ci / gate` | Final aggregation + artifact gate |
 
 Renaming the caller job blocks merges loudly. ONE ruleset per repo requires exactly these contexts.
 

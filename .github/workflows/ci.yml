@@ -1,16 +1,20 @@
 name: CI
 
-# The single required context for this repository ("gate"), mirroring the
-# org-wide policy: every repo proves its own health through one aggregate.
+# The required contexts for this repository are "gate" (reported by this
+# workflow's own pull_request self-run) and "ci / gate" (the caller
+# composite in pr-pipeline.yml), mirroring the org-wide policy: every repo
+# proves its own health through one aggregate.
 # devtools is itself trust-boundary: ALL PRs additionally require human
 # review (see trust-boundary-protect.yml).
 #
 # This workflow is ALSO the org-wide aggregate: consumer repos call it with
-# a one-line job named `gate`, exposing exactly seven required contexts:
-#   gate / core, gate / rust, gate / elixir, gate / typescript, gate / python,
-#   gate / docs-drift, gate / gate
-# Stack jobs report "skipped" when the language is absent — skipped required
-# checks satisfy org rulesets, so ONE ruleset fits every repo. Renaming the
+# a one-line job named `ci`, exposing exactly seven required contexts:
+#   ci / core, ci / rust / rust, ci / elixir / elixir,
+#   ci / typescript / typescript, ci / python / python,
+#   ci / docs-drift / Docs drift (DOC_MAP), ci / gate
+# Language stack jobs never report "skipped": each detects its stack
+# internally and concludes SUCCESS vacuously when absent (only
+# test-postgis skips), so ONE ruleset fits every repo. Renaming the
 # caller job makes the required contexts never report: merge blocks loudly.
 # Language jobs call sibling workflows locally (./) — those resolve from
 # THIS repository even when called cross-repo (proven by the pilot). The
@@ -109,8 +113,10 @@ jobs:
         run: |
           echo "needs results: $RESULTS"
           for result in $RESULTS; do
-            # "skipped" is a designed outcome, not a failure: stack jobs
-            # skip when the language is absent, docs-drift skips on push
+            # "skipped" is a designed outcome, not a failure: the language
+            # stack jobs never skip (they detect their stack internally and
+            # conclude SUCCESS vacuously when absent), test-postgis skips
+            # when no PostGIS image is requested, docs-drift skips on push
             # events. Only failure / cancelled / timed_out block the gate.
             if [ "$result" != "success" ] && [ "$result" != "skipped" ]; then
               echo "::error::gate did not succeed: $result"
