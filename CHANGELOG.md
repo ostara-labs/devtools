@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.12.0](https://github.com/ostara-labs/devtools/compare/v1.11.0...v1.12.0) (2026-09-12)
+
+
+### Features
+
+* **ci:** enable anchored inline suggestions (/improve) ([#47](https://github.com/ostara-labs/devtools/issues/47)) ([47b6b91](https://github.com/ostara-labs/devtools/commit/47b6b91258a491974481a53dfce9329ae45dc392))
+
 ## [1.11.0](https://github.com/ostara-labs/devtools/compare/v1.10.0...v1.11.0) (2026-09-11)
 
 
