@@ -48,6 +48,7 @@ jobs:
   # the composite's *.sh discovery) and is guarded to a no-op in consumer
   # repos — find errors on a missing hooks/ path, so the guard is required.
   core:
+    timeout-minutes: 15
     name: core
     runs-on: ubuntu-24.04
     steps:
@@ -73,18 +74,22 @@ jobs:
           fi
 
   rust:
+    timeout-minutes: 15
     uses: ./.github/workflows/rust-ci.yml
     with:
       stack-dir: ${{ inputs['stack-dir'] != '' && inputs['stack-dir'] || 'rust' }}
   elixir:
+    timeout-minutes: 15
     uses: ./.github/workflows/elixir-ci.yml
     with:
       stack-dir: ${{ inputs['stack-dir'] != '' && inputs['stack-dir'] || 'elixir' }}
   typescript:
+    timeout-minutes: 15
     uses: ./.github/workflows/typescript-ci.yml
     with:
       stack-dir: ${{ inputs['stack-dir'] != '' && inputs['stack-dir'] || 'typescript' }}
   python:
+    timeout-minutes: 15
     uses: ./.github/workflows/python-ci.yml
     with:
       stack-dir: ${{ inputs['stack-dir'] != '' && inputs['stack-dir'] || 'python' }}
@@ -96,12 +101,14 @@ jobs:
   # Local ./ reference resolves from THIS repository (same proven pattern
   # as the language jobs above).
   docs-drift:
+    timeout-minutes: 15
     uses: ./.github/workflows/docs-drift.yml
 
   # Universal merge gate: every repository consuming devtools exposes
   # exactly this context to the org ruleset. Composition may evolve; the
   # contract ("gate green = mergeable") does not.
   gate:
+    timeout-minutes: 15
     name: gate
     needs: [core, rust, elixir, typescript, python, docs-drift]
     if: ${{ !cancelled() }}

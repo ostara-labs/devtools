@@ -26,12 +26,14 @@ permissions: {}
 
 jobs:
   ci:
+    timeout-minutes: 15
     name: ci
     permissions:
       contents: read
     uses: ostara-labs/devtools/.github/workflows/ci.yml@963c23b29239dfaee577cc391e2c77958a265092 # v1.12.0
 
   ai-review:
+    timeout-minutes: 15
     name: ai-review
     needs: ci
     if: ${{ !cancelled() && needs.ci.result == 'success' && github.event_name == 'pull_request' && !github.event.pull_request.draft }}
@@ -44,6 +46,7 @@ jobs:
       AI_REVIEW_OPENROUTER_API_KEY: ${{ secrets.AI_REVIEW_OPENROUTER_API_KEY }}
 
   merge-gate:
+    timeout-minutes: 15
     name: merge-gate
     needs: [ci, ai-review]
     if: ${{ !cancelled() && github.event_name == 'pull_request' && !github.event.pull_request.draft }}

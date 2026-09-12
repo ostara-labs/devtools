@@ -14,6 +14,7 @@ permissions:
 
 jobs:
   gitleaks:
+    timeout-minutes: 15
     runs-on: ubuntu-24.04
     steps:
       - name: Harden runner
@@ -41,6 +42,7 @@ jobs:
         run: ./gitleaks git --verbose --redact --exit-code 1 .
 
   scorecard:
+    timeout-minutes: 15
     runs-on: ubuntu-24.04
     permissions:
       contents: read
