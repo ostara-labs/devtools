@@ -74,22 +74,18 @@ jobs:
           fi
 
   rust:
-    timeout-minutes: 15
     uses: ./.github/workflows/rust-ci.yml
     with:
       stack-dir: ${{ inputs['stack-dir'] != '' && inputs['stack-dir'] || 'rust' }}
   elixir:
-    timeout-minutes: 15
     uses: ./.github/workflows/elixir-ci.yml
     with:
       stack-dir: ${{ inputs['stack-dir'] != '' && inputs['stack-dir'] || 'elixir' }}
   typescript:
-    timeout-minutes: 15
     uses: ./.github/workflows/typescript-ci.yml
     with:
       stack-dir: ${{ inputs['stack-dir'] != '' && inputs['stack-dir'] || 'typescript' }}
   python:
-    timeout-minutes: 15
     uses: ./.github/workflows/python-ci.yml
     with:
       stack-dir: ${{ inputs['stack-dir'] != '' && inputs['stack-dir'] || 'python' }}
@@ -101,7 +97,6 @@ jobs:
   # Local ./ reference resolves from THIS repository (same proven pattern
   # as the language jobs above).
   docs-drift:
-    timeout-minutes: 15
     uses: ./.github/workflows/docs-drift.yml
 
   # Universal merge gate: every repository consuming devtools exposes
