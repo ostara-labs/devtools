@@ -52,6 +52,16 @@ removal stays visible in the PR history.
   private repos under the Free plan): require a pull request, 1
   approval with dismiss-stale, and the required status check
   **`merge-gate`**.
+  **Current org stance — advisory mode (Free plan):** branch protection
+  is not available on private repositories at all under the Free plan
+  (the API answers 403 "Upgrade to GitHub Pro or make this repository
+  public"), so the checks are *advisory*: `merge-gate` red is a signal,
+  not a technical wall — a human can still merge. Upgrading the org to
+  GitHub Team (~$4/user/month) makes the gate genuinely blocking and
+  also unlocks org-level secrets for private repos and managed rulesets.
+- CODEOWNERS covering `.github/workflows/**`: the pipeline file is taken
+  from the PR's merge commit, so workflow edits must require code-owner
+  review (the trust-boundary bot flags them).
 - CODEOWNERS covering `.github/workflows/**`: the pipeline file is taken
   from the PR's merge commit, so workflow edits must require code-owner
   review (the trust-boundary bot flags them).
