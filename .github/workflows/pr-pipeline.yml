@@ -2,11 +2,11 @@ name: PR pipeline
 
 # devtools self-adoption: the hub reviews its own PRs with the same
 # pipeline it ships to the consumers (pia, bot, messenger-assistant,
-# home, world-monitor-tui). The gate job calls the aggregate IN THIS
+# home, world-monitor-tui). The ci job calls the aggregate IN THIS
 # repository (same-repo cross-ref, legal); it DUPLICATES the aggregate's
-# own pull_request self-run for now -- the required "gate" context is
-# reported by that self-run, and collapsing the duplication would move
-# the required context to the composite "gate / gate" name, which is a
+# own pull_request self-run. The required "gate" context is reported by
+# that self-run and the composite "ci / gate" by this caller job; the
+# devtools ruleset requires both. Collapsing the duplication is a further
 # ruleset change. Cleanup deferred until then.
 #
 # The pull_request event flows through github.event into every callee --
@@ -25,16 +25,16 @@ concurrency:
 permissions: {}
 
 jobs:
-  gate:
-    name: gate
+  ci:
+    name: ci
     permissions:
       contents: read
     uses: ostara-labs/devtools/.github/workflows/ci.yml@963c23b29239dfaee577cc391e2c77958a265092 # v1.12.0
 
   ai-review:
     name: ai-review
-    needs: gate
-    if: ${{ !cancelled() && needs.gate.result == 'success' && github.event_name == 'pull_request' && !github.event.pull_request.draft }}
+    needs: ci
+    if: ${{ !cancelled() && needs.ci.result == 'success' && github.event_name == 'pull_request' && !github.event.pull_request.draft }}
     permissions:
       contents: read
       issues: write
@@ -45,7 +45,7 @@ jobs:
 
   merge-gate:
     name: merge-gate
-    needs: [gate, ai-review]
+    needs: [ci, ai-review]
     if: ${{ !cancelled() && github.event_name == 'pull_request' && !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     permissions:
@@ -54,7 +54,7 @@ jobs:
       - name: Verdict
         uses: ostara-labs/devtools/.github/actions/merge-gate-verdict@963c23b29239dfaee577cc391e2c77958a265092 # v1.12.0
         with:
-          ci-result: ${{ needs.gate.result }}
+          ci-result: ${{ needs.ci.result }}
           review-result: ${{ needs.ai-review.result }}
           draft: ${{ github.event.pull_request.draft }}
           labels: ${{ toJSON(github.event.pull_request.labels.*.name) }}
