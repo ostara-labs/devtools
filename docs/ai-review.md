@@ -80,6 +80,15 @@ removal stays visible in the PR history.
 4. Extend the branch protection rule with the `merge-gate` required
    check.
 
+## Merging: triage the findings
+
+Green checks mean the review **ran** — never that its findings were
+addressed. Before merging a PR, every review thread must be triaged:
+fixed, or replied to with a justification and resolved. The agent's
+`gh pr merge` calls are mechanically gated by the `merge-review-gate`
+hook (agent-conventions), which blocks a merge while unresolved review
+threads exist — the merge request is retried after the triage.
+
 ## Model A/B
 
 Change the `model` input in the consumer's pipeline file (one line) and
