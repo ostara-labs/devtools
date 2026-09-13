@@ -391,7 +391,7 @@ After completing all steps, verify:
 - [ ] `git config core.hooksPath` in bot repo returns `.devtools/hooks`
 - [ ] `make help` in bot repo lists standard targets
 - [ ] CI workflow runs on bot repo PRs (the `rust-ci` job)
-- [ ] A PR touching `.github/trust-boundary.yml` gets `requires-human-review` label
+- [ ] A PR touching `.github/trust-boundary.yml` is blocked by CODEOWNERS review requirement
 
 ---
 
