@@ -1,0 +1,11 @@
+# CODEOWNERS — ostara-labs/devtools is the trust hub.
+#
+# Every path in this repository is on the trust boundary: the hooks, CI
+# workflows and configs here constrain every other repo in the org. A PR
+# touching devtools therefore requires an explicit approval from the owner
+# (@Oloompa), enforced by the "trust-boundary-human-review" branch ruleset
+# (require_code_owner_review: true).
+#
+# Pattern and recipe: docs/codeowners-trust-boundary.md
+
+* @Oloompa
