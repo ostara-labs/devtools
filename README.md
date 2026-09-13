@@ -164,3 +164,4 @@ Therefore:
 - Any PR to `ostara-labs/devtools` MUST be labeled `requires-human-review`.
 - The GitHub org ruleset MUST enforce this (see `workflows/trust-boundary-protect.yml`).
 - The agent MUST NOT auto-merge PRs to this repo.
+- The path-based enforcement pattern (CODEOWNERS + ruleset) is documented in [`docs/codeowners-trust-boundary.md`](docs/codeowners-trust-boundary.md).
