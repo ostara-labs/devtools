@@ -48,6 +48,7 @@ jobs:
   # the composite's *.sh discovery) and is guarded to a no-op in consumer
   # repos — find errors on a missing hooks/ path, so the guard is required.
   core:
+    timeout-minutes: 15
     name: core
     runs-on: ubuntu-24.04
     steps:
@@ -102,6 +103,7 @@ jobs:
   # exactly this context to the org ruleset. Composition may evolve; the
   # contract ("gate green = mergeable") does not.
   gate:
+    timeout-minutes: 15
     name: gate
     needs: [core, rust, elixir, typescript, python, docs-drift]
     if: ${{ !cancelled() }}

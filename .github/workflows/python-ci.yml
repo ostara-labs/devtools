@@ -19,6 +19,7 @@ permissions:
 
 jobs:
   python:
+    timeout-minutes: 15
     runs-on: ubuntu-24.04
     env:
       STACK_DIR: ${{ inputs['stack-dir'] }}
@@ -75,6 +76,7 @@ jobs:
   # to consume them. Non-PostGIS repos pay zero cost (job is skipped,
   # nothing pulled).
   test-postgis:
+    timeout-minutes: 15
     if: inputs.postgis-image != ''
     runs-on: ubuntu-24.04
     env:

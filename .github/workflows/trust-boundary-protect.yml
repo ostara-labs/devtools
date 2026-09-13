@@ -17,6 +17,7 @@ permissions:
 
 jobs:
   enforce-human-review:
+    timeout-minutes: 15
     name: Enforce human review (devtools is trust-boundary)
     runs-on: ubuntu-latest
     steps:

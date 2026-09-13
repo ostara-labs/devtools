@@ -14,6 +14,7 @@ permissions:
 
 jobs:
   typescript:
+    timeout-minutes: 15
     runs-on: ubuntu-24.04
     env:
       STACK_DIR: ${{ inputs['stack-dir'] }}

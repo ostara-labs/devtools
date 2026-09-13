@@ -24,6 +24,7 @@ on:
 
 jobs:
   docs-drift:
+    timeout-minutes: 15
     name: Docs drift (DOC_MAP)
     runs-on: ubuntu-latest
     # Runs on direct pull_request events AND on workflow_call (the org
