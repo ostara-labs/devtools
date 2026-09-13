@@ -173,9 +173,9 @@ const botTrustBoundary = new github.RepositoryRuleset("bot-trust-boundary-review
     rules: {
         pullRequest: {
             requiredApprovingReviewCount: 1,
-            // Note: required_reviewers with file_patterns is beta.
-            // The PR classification workflow (pr-classify.yml) handles this
-            // at the CI level until required_reviewers is GA.
+            // Note: required_reviewers with file_patterns is beta. This
+            // code-owner review is the enforcement — the path-based
+            // pattern is documented in docs/codeowners-trust-boundary.md.
         },
     },
 });

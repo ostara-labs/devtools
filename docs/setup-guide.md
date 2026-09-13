@@ -351,11 +351,6 @@ jobs:
   rust-ci:
     uses: ostara-labs/devtools/.github/workflows/rust-ci.yml@main
     secrets: inherit
-
-  # PR classification — trust-boundary check
-  pr-classify:
-    uses: ostara-labs/devtools/.github/workflows/pr-classify.yml@main
-    secrets: inherit
 ```
 
 > Once the setup is stable, pin the workflow to a commit SHA instead of `@main`:
@@ -375,11 +370,11 @@ git push
 
 1. Go to: https://github.com/ostara-labs/bot/actions
 2. The latest push should trigger the `CI` workflow
-3. Both jobs (`rust-ci`, `pr-classify`) should pass
-4. Open a test PR that touches a non-trust-boundary file → `pr-classify` should
-   classify it as evolvable (no `requires-human-review` label)
-5. Open a test PR that touches `src/core/laws.rs` (create the file first with
-   a placeholder) → `pr-classify` should apply the `requires-human-review` label
+3. The job (`rust-ci`) should pass
+4. Trust-boundary enforcement on the repo is path-based — CODEOWNERS plus a
+   repository ruleset requiring code-owner review (see
+   [the CODEOWNERS trust-boundary pattern](codeowners-trust-boundary.md)).
+   A PR touching a protected path stays blocked until the owner approves.
 
 ---
 
@@ -395,7 +390,7 @@ After completing all steps, verify:
 - [ ] bot repo has `.devtools` submodule
 - [ ] `git config core.hooksPath` in bot repo returns `.devtools/hooks`
 - [ ] `make help` in bot repo lists standard targets
-- [ ] CI workflow runs on bot repo PRs (both `rust-ci` and `pr-classify`)
+- [ ] CI workflow runs on bot repo PRs (the `rust-ci` job)
 - [ ] A PR touching `.github/trust-boundary.yml` gets `requires-human-review` label
 
 ---
