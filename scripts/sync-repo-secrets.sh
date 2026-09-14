@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # Sync secrets from a local source down to consumer repos.
 #
-# Why per-repo and not an org secret: on the GitHub Free plan, org secrets
-# cannot be used by private repositories (only public ones). Each consumer
-# carries its own copy — this script makes that a single command.
+# The org secret is the default: `AI_REVIEW_OPENROUTER_API_KEY` is defined
+# org-wide and, on the GitHub Team plan, reaches private repositories too —
+# every consumer inherits it with no per-repo copy. This script exists only
+# to push a DELIBERATE per-repo override (e.g. a scoped key for one repo).
+# A repo-level secret always overrides the org value, so run it only when a
+# repo genuinely needs its own — never as a plan workaround.
 #
 # Why not read the org secret's value: GitHub secret values are write-only
 # (unreadable via API or UI, even as org admin). The values therefore come
