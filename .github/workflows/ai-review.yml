@@ -64,3 +64,12 @@ jobs:
           # org-wide ostara-labs/pr-agent-settings .pr_agent.toml).
           GITHUB_ACTION_CONFIG.AUTO_IMPROVE: 'true'
           GITHUB_ACTION_CONFIG.PR_ACTIONS: '["opened", "reopened", "ready_for_review", "synchronize"]'
+          # A tool error must fail the step. PR-Agent swallows it by default
+          # (propagate_tool_errors=false): the tool publishes a "Failed to
+          # generate ..." comment, returns normally, and the job exits 0 — so a
+          # dead reviewer was indistinguishable from a clean one. Observed
+          # 2026-09-13/14: a provisioning OpenRouter key returned 401 on every
+          # call while the check stayed green on every PR. With this on, a
+          # failed review fails the job, `merge-gate` fails with it, and the PR
+          # is blocked until the review runs for real.
+          CONFIG.PROPAGATE_TOOL_ERRORS: 'true'

@@ -33,7 +33,8 @@ hop, no context loss (the caller's pull_request event flows through
 3. **`merge-gate`** — a plain job (its check run is the required status
    check) that fails unless all three conditions hold:
    1. CI result is `success`
-   2. AI review result is `success`
+   2. AI review result is `success` — the review completed, not merely
+      "the step exited 0" (see *Failure visibility*)
    3. no blocking label on the PR
 
 Blocking labels (default): `possible security issue` (set by the review)
@@ -43,6 +44,24 @@ files, or the 3000-file API cap — set by `pr-meta`).
 **Override** (deliberate, audited): remove the blocking label — the
 `unlabeled` event re-fires the pipeline, the gate turns green, and the
 removal stays visible in the PR history.
+
+## Failure visibility
+
+`CONFIG.PROPAGATE_TOOL_ERRORS=true` makes a tool error fail the job
+instead of exiting 0. PR-Agent's default (`propagate_tool_errors=false`)
+catches the exception internally, publishes a `Failed to generate ...`
+comment, and returns normally — so before this setting a broken reviewer
+(invalid key, unreachable model) produced a green `ai-review` check on
+every PR, and a green `merge-gate` behind it. The failure was visible only
+to whoever read the run log.
+
+With it on:
+
+- a failed review fails `ai-review`, and `merge-gate` fails with it — a
+  broken reviewer blocks merges instead of silently approving them;
+- a transient provider outage blocks the PR too. That is deliberate:
+  re-run the failed job (or push) once the provider recovers, rather than
+  merging on an unread PR. A green check must mean the review ran.
 
 ## Prerequisites
 
@@ -59,9 +78,6 @@ removal stays visible in the PR history.
   not a technical wall — a human can still merge. Upgrading the org to
   GitHub Team (~$4/user/month) makes the gate genuinely blocking and
   also unlocks org-level secrets for private repos and managed rulesets.
-- CODEOWNERS covering `.github/workflows/**`: the pipeline file is taken
-  from the PR's merge commit, so workflow edits must require code-owner
-  review (the trust-boundary bot flags them).
 - CODEOWNERS covering `.github/workflows/**`: the pipeline file is taken
   from the PR's merge commit, so workflow edits must require code-owner
   review (the trust-boundary bot flags them).
@@ -106,3 +122,4 @@ observed $0.0006/review on a small docs PR), fallback:
 | `Could not read persistent review state ... exit 1` | `persistent_finding_state` needs a verifiable GitHub user identity; it is disabled org-wide via env (`PR_REVIEWER.PERSISTENT_FINDING_STATE=false`). |
 | `.pr_agent.toml` change has no effect | The file is read from the repo's **default branch** only — merge it first. |
 | PR hangs on "Expected" for a required check | A skipped job that is a reusable-workflow **call** creates no check run. Required checks must be plain jobs (the `merge-gate` design) — never make a required check a skippable `uses:` job. |
+| A failed review left the check green | Fixed 2026-09-14: `CONFIG.PROPAGATE_TOOL_ERRORS=true` (see *Failure visibility*). Before it, PR-Agent swallowed the error and the job exited 0. Every consumer must bump its `@<digest>` pin to pick the fix up. |
