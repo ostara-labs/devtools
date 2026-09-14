@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.12.1](https://github.com/ostara-labs/devtools/compare/v1.12.0...v1.12.1) (2026-09-14)
+
+
+### Bug Fixes
+
+* **ai-review:** fail the job when PR-Agent swallows a tool error ([#56](https://github.com/ostara-labs/devtools/issues/56)) ([62a048e](https://github.com/ostara-labs/devtools/commit/62a048e60f758e390f49d41dd82442a853b0c3ce))
+
 ## [1.12.0](https://github.com/ostara-labs/devtools/compare/v1.11.0...v1.12.0) (2026-09-12)
 
 
