@@ -65,19 +65,22 @@ With it on:
 
 ## Prerequisites
 
-- Secret `AI_REVIEW_OPENROUTER_API_KEY` (repo-level; the
-  `scripts/sync-repo-secrets.sh` helper fills it from the local store).
-- Classic branch protection on `main` (rulesets do not enforce on
-  private repos under the Free plan): require a pull request, 1
-  approval with dismiss-stale, and the required status check
-  **`merge-gate`**.
-  **Current org stance — advisory mode (Free plan):** branch protection
-  is not available on private repositories at all under the Free plan
-  (the API answers 403 "Upgrade to GitHub Pro or make this repository
-  public"), so the checks are *advisory*: `merge-gate` red is a signal,
-  not a technical wall — a human can still merge. Upgrading the org to
-  GitHub Team (~$4/user/month) makes the gate genuinely blocking and
-  also unlocks org-level secrets for private repos and managed rulesets.
+- Secret `AI_REVIEW_OPENROUTER_API_KEY`, defined **org-wide** (org →
+  Settings → Secrets and variables → Actions). One org secret serves
+  every consumer, public or private: the org is on GitHub **Team**,
+  where org secrets reach private repositories. Do **not** add a
+  per-repo copy — a repo-level secret always overrides the org value
+  (GitHub precedence is fixed), silently pinning that repo to whatever
+  key was copied. `scripts/sync-repo-secrets.sh` remains only for a
+  deliberate per-repo override.
+- Ruleset-based branch protection on `main`, enforced org-wide:
+  `main-protection` (pull request required) plus `required-ci-checks`,
+  which makes **`ci / gate`** and **`merge-gate`** required status
+  checks on the default branch. Enforcement is **active and blocking**
+  (rulesets work on private repositories; the org is on Team), with no
+  bypass actor on the org rulesets. A repo-level trust-boundary ruleset
+  adds code-owner review — 1 approving review on `devtools`
+  (`* @Oloompa`).
 - CODEOWNERS covering `.github/workflows/**`: the pipeline file is taken
   from the PR's merge commit, so workflow edits must require code-owner
   review (the trust-boundary bot flags them).
@@ -91,10 +94,13 @@ With it on:
    `persistent_comment = true`, `require_merge_recommendation = true`,
    and chill-profile `extra_instructions` anchored on the repo's
    `AGENTS.md` (fed to the reviewer automatically).
-3. Set the repo secret `AI_REVIEW_OPENROUTER_API_KEY`
-   (`scripts/sync-repo-secrets.sh`).
-4. Extend the branch protection rule with the `merge-gate` required
-   check.
+3. The key needs no setup: the org secret
+   `AI_REVIEW_OPENROUTER_API_KEY` is inherited automatically (org secrets
+   reach private repos on the Team plan). Add a repo-level secret only
+   for a deliberate per-repo override.
+4. The org rulesets already require `ci / gate` and `merge-gate` on the
+   default branch — no per-repo setup unless the repo needs an extra
+   rule (e.g. a trust-boundary code-owner rule).
 
 ## Merging: triage the findings
 
