@@ -23,13 +23,24 @@ SHELL      := /bin/bash
 help: ## Show this help message
 	@awk 'BEGIN {FS = ":.*##"; printf "\033[1mUsage:\033[0m make [target]\n\n"} /^##@/ {printf "\n\033[1m%s\033[0m\n", substr($$0, 5); next} /^[a-zA-Z_-]+:.*##/ {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-devtools-update: ## Update the devtools submodule to the latest tagged version
-	@if [ -d ".devtools" ]; then \
-		cd .devtools && git fetch origin --tags && git checkout $$(git describe --tags $$(git rev-list --tags --max-count=1)) && cd .. && \
-		echo "devtools updated to $$(cd .devtools && git describe --tags)"; \
-	else \
+devtools-update: ## Update the devtools submodule to the latest tag and stage it
+	@if [ ! -d ".devtools" ]; then \
 		echo "No .devtools submodule found. Run: git submodule add https://github.com/ostara-labs/devtools .devtools"; \
-	fi
+		exit 1; \
+	fi; \
+	if ! git -C .devtools fetch origin --tags; then \
+		echo "Failed to fetch devtools tags - check network access to the devtools remote, then retry"; \
+		exit 1; \
+	fi; \
+	latest=$$(git -C .devtools tag --sort=-v:refname | head -n1); \
+	if [ -z "$$latest" ]; then \
+		echo "No devtools release tags found after fetch"; \
+		exit 1; \
+	fi; \
+	git -C .devtools checkout "$$latest"; \
+	git add .devtools; \
+	echo "devtools updated to $$latest and staged (.devtools)"; \
+	echo "Next: git commit (for example: git commit -m 'chore(devtools): bump submodule to $$latest')"
 
 hooks: ## Activate the devtools git hooks (pre-commit, commit-msg, pre-push)
 	@if [ -d ".devtools/hooks" ]; then \

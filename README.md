@@ -146,7 +146,7 @@ Every repo that uses devtools gets the same target names:
 | `make format` | Auto-format code | `cargo fmt --all` | `mix format` | `biome format --write` | `ruff format` |
 | `make clean` | Clean build artifacts | `cargo clean` | `mix clean` | `rm -rf dist node_modules/.cache` | `rm -rf build dist .pytest_cache` |
 | `make hooks` | Set git hooksPath to `.devtools/hooks` | `git config core.hooksPath .devtools/hooks` | same | same | same |
-| `make devtools-update` | Bump submodule to latest release tag | `cd .devtools && git fetch && git checkout $(git describe --tags --abbrev=0)` | same | same | same |
+| `make devtools-update` | Bump submodule to latest release tag and stage it | `git -C .devtools fetch --tags && git -C .devtools checkout $(git -C .devtools tag --sort=-v:refname \| head -n1) && git add .devtools` | same | same | same |
 | `make help` | List available targets | auto-generated | auto-generated | auto-generated | auto-generated |
 
 The agent (and humans) always know that `make lint` works in any ostara-labs repo.
