@@ -45,7 +45,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
-    uses: ostara-labs/devtools/.github/workflows/pr-meta.yml@29c469173a385094bc8cf6f01f5428700eaf23d6 # single-job pr-meta, replaced by the release tag
+    uses: ostara-labs/devtools/.github/workflows/pr-meta.yml@8737b84e05c3d1a4b9c1e6d5b0f0b2b6f3b0c1a2 # single-job pr-meta, replaced by the release tag
 
   ai-review:
     name: ai-review
