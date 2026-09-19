@@ -28,6 +28,12 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Merge-queue entries: the queue builds gh-readonly-queue/<base>/pr-N-<sha>
+  # with the PR merged onto the current base and fires this event there. The
+  # required contexts must report on it, otherwise the entry waits forever.
+  # Consumers inherit it through workflow_call; devtools needs it for its own
+  # queue self-run.
+  merge_group:
   workflow_call:
     inputs:
       stack-dir:
@@ -102,7 +108,11 @@ jobs:
       # org-gate changes.
       - uses: ostara-labs/devtools/.github/actions/org-gate@00bb25735ed4b33a8b81a0530c5321a51cfb74f9 # v1.3.1
         with:
-          base-sha: ${{ github.event.pull_request.base.sha || github.event.before }}
+          # Three events, three shapes: pull_request carries the base, a
+          # merge-queue entry carries merge_group.base_sha, a push carries
+          # `before`. Without the merge_group branch the gate would scan an
+          # empty range and fail every queue entry.
+          base-sha: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
 
       - name: Shellcheck extensionless hooks
         shell: bash

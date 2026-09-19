@@ -17,6 +17,11 @@ on:
     branches: [main]
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review, unlabeled]
+  # Merge-queue entries. The queue tests the PR merged onto the current base
+  # BEFORE merging it, so the required contexts must report here too:
+  # `ci / gate` does, and `merge-gate` is adapted below. The review is not
+  # re-run in the queue — the PR only gets in with its checks green.
+  merge_group:
 
 concurrency:
   group: pr-pipeline-${{ github.event.pull_request.number || github.ref }}
@@ -47,7 +52,13 @@ jobs:
     timeout-minutes: 15
     name: merge-gate
     needs: [ci, ai-review]
-    if: ${{ !cancelled() && github.event_name == 'pull_request' && !github.event.pull_request.draft }}
+    # Two shapes. On pull_request: the real verdict. On merge_group: the entry
+    # only exists because the PR's required checks were green, so the review is
+    # already settled — hardcoding 'success' is a statement about the queue's
+    # precondition, not a bypass. The label list is passed as '[]' because a
+    # merge-queue entry has no labels and the verdict action would choke on
+    # `jq` over a null array.
+    if: ${{ !cancelled() && (github.event_name == 'merge_group' || (github.event_name == 'pull_request' && !github.event.pull_request.draft)) }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -56,6 +67,6 @@ jobs:
         uses: ostara-labs/devtools/.github/actions/merge-gate-verdict@b5d3237e80525ebd8b2be3f1356d3b83801a683c # v1.12.1
         with:
           ci-result: ${{ needs.ci.result }}
-          review-result: ${{ needs.ai-review.result }}
+          review-result: ${{ github.event_name == 'merge_group' && 'success' || needs.ai-review.result }}
           draft: ${{ github.event.pull_request.draft }}
-          labels: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+          labels: ${{ github.event_name == 'merge_group' && '[]' || toJSON(github.event.pull_request.labels.*.name) }}
