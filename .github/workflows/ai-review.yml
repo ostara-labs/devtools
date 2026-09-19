@@ -40,12 +40,38 @@ jobs:
       issues: write
       pull-requests: write
     steps:
+      - name: Preflight — OpenRouter credential
+        # A missing or rejected credential is the one failure that looks like a
+        # working reviewer from the outside: PR-Agent reports it as a LiteLLM
+        # stack trace, and the only signal is the red check. Name the cause here
+        # instead. The env name contains a dot, so it cannot be read as a shell
+        # variable — printenv is the way in.
+        env:
+          OPENROUTER.KEY: ${{ secrets.AI_REVIEW_OPENROUTER_API_KEY }}
+        run: |
+          key="$(printenv 'OPENROUTER.KEY' || true)"
+          if [ -z "${key}" ]; then
+            echo "::error::AI_REVIEW_OPENROUTER_API_KEY is empty — the org secret is missing or not shared with this repository, so the review cannot authenticate."
+            exit 1
+          fi
+          status="$(curl -s -o /dev/null -w '%{http_code}' \
+            -H "Authorization: Bearer ${key}" \
+            https://openrouter.ai/api/v1/auth/key || true)"
+          case "${status}" in
+            200) echo "OpenRouter credential accepted." ;;
+            401) echo "::error::OpenRouter rejected the credential (HTTP 401) — rotate the org secret AI_REVIEW_OPENROUTER_API_KEY."; exit 1 ;;
+            *) echo "::warning::OpenRouter auth check returned HTTP ${status}; the review step reports the real outcome." ;;
+          esac
+
       - name: Run PR-Agent review
-        uses: the-pr-agent/pr-agent@main
-        # Expressions are not allowed in a step-level `uses:` — the ref is
-        # hardcoded. Pin for production with the Docker form instead:
-        #   uses: docker://pragent/pr-agent:<version>-github_action
-        # (digest-pinnable, GitHub Artifact Attestations verifiable).
+        # 0.45.0-github_action (released 2026-09-05), digest-pinned. The floating
+        # the-pr-agent/pr-agent@main ref this replaces shipped an upstream
+        # regression on 2026-09-15: LiteLLM 1.101.0 stopped forwarding the
+        # request-local OpenRouter key, so every review died with a 401 while the
+        # check stayed red and blocked merges org-wide. A released, immutable
+        # image is what a production gate needs, and the org Renovate preset
+        # (default.json) tracks the tag, so the pin cannot freeze silently.
+        uses: docker://pragent/pr-agent@sha256:548b760b81ab4b3f729182428695ccc1194bbf87528c2b1e2b2b07e5223af7b6
         env:
           GITHUB_TOKEN: ${{ github.token }}
           OPENROUTER.KEY: ${{ secrets.AI_REVIEW_OPENROUTER_API_KEY }}
