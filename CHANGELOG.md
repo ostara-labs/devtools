@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.13.2](https://github.com/ostara-labs/devtools/compare/v1.13.1...v1.13.2) (2026-09-19)
+
+
+### Performance Improvements
+
+* **ci:** skip absent stacks, and support the merge queue ([#65](https://github.com/ostara-labs/devtools/issues/65)) ([ef378e1](https://github.com/ostara-labs/devtools/commit/ef378e1ff397e92c52c4e8807d3c108397923702))
+
 ## [1.13.1](https://github.com/ostara-labs/devtools/compare/v1.13.0...v1.13.1) (2026-09-19)
 
 
