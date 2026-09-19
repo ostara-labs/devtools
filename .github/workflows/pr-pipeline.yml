@@ -36,6 +36,17 @@ jobs:
       contents: read
     uses: ostara-labs/devtools/.github/workflows/ci.yml@b5d3237e80525ebd8b2be3f1356d3b83801a683c # v1.12.1
 
+  # Self-adoption, like the ci job above: the hub classifies its own PRs with
+  # the workflow it ships. pull_request only - a push or a merge-queue entry
+  # has no pull request to read, and the job would have nothing to label.
+  pr-meta:
+    name: pr-meta
+    if: ${{ github.event_name == 'pull_request' }}
+    permissions:
+      contents: read
+      pull-requests: write
+    uses: ostara-labs/devtools/.github/workflows/pr-meta.yml@29c469173a385094bc8cf6f01f5428700eaf23d6 # single-job pr-meta, replaced by the release tag
+
   ai-review:
     name: ai-review
     needs: ci
