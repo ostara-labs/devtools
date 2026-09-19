@@ -84,7 +84,7 @@ jobs:
         env:
           STACK_DIR: ${{ inputs['stack-dir'] }}
         run: |
-          has() { if [ -f "$1/$2" ]; then echo true; else echo false; fi; }
+          has() { local dir="${1%/}"; if [ -f "${dir}/$2" ]; then echo true; else echo false; fi; }
           {
             echo "rust=$(has "${STACK_DIR:-rust}" Cargo.toml)"
             echo "elixir=$(has "${STACK_DIR:-elixir}" mix.exs)"
