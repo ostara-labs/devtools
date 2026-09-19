@@ -8,219 +8,370 @@ name: PR meta
 #     pr-meta:
 #       uses: ostara-labs/devtools/.github/workflows/pr-meta.yml@<sha>
 #
-#   - title  : enforces Conventional Commits on the PR title (blocking;
-#              skipped for Dependabot PRs — their titles are machine-
-#              generated "Bump ..." strings that no lint should gate)
-#   - size   : labels size/S|size/M|size/L|size/XL from the diff
-#   - risk   : labels risk/low|risk/medium|risk/high (trust-boundary files
-#              => risk/high; docs-only => risk/low)
+# ONE job, four axes. GitHub bills every job rounded up to the whole minute,
+# so four runners for four seconds of work costs four minutes. Everything here
+# derives from the same two inputs - the pull request and its diff - so it runs
+# once:
+#
+#   - title  : Conventional Commits on the PR title (blocking, reported LAST
+#              so a bad title never costs the labels; Dependabot exempt)
+#   - size   : size/XS|S|M|L|XL from review effort, plus size/too-big, the
+#              blocking label the merge gate reads
+#   - risk   : risk/low|medium|high from the trust-boundary list and the
+#              per-stack signals below
+#   - review : requires-human-review when the trust-boundary list matches
 #
 # The event context is the caller's: github.event is the pull_request that
-# triggered the caller, and actions/checkout inside this workflow checks
-# out the caller's repository (needed by the risk job, which reads the
-# caller's .github/trust-boundary.yml).
+# triggered the caller, and actions/checkout inside this workflow checks out
+# the caller's repository (the trust-boundary list is the caller's).
 #
-# Fork pull requests: title still runs (read-only check); size and risk
-# are computed and published in the job summary only (the default token
-# is read-only there, so no labels/comments). The caller must grant
-# `pull-requests: write` for the label writes to land.
+# Fork pull requests run read-only: every signal is computed and published in
+# the job summary instead of applied (the default token cannot write there).
+# The caller must grant `pull-requests: write` for the writes to land.
 
 on:
   workflow_call:
     inputs:
       too-big-threshold:
-        description: 'Added lines (excluding generated/lock files) above which size/too-big is applied and the merge-gate blocks'
+        description: 'Review-effort lines above which size/too-big is applied and the merge-gate blocks'
         required: false
         type: string
         default: '1000'
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
-  title:
+  meta:
     timeout-minutes: 15
-    name: title
+    name: meta
     runs-on: ubuntu-latest
+    # Two pushes in a row would otherwise race on the same labels and comment.
+    concurrency:
+      group: pr-meta-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
     steps:
-      - name: Check Conventional Commits title
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - name: Validate the title
+        id: title
         env:
           TITLE: ${{ github.event.pull_request.title }}
           AUTHOR: ${{ github.event.pull_request.user.login }}
         run: |
           set -euo pipefail
           # Dependabot titles are machine-generated ("Bump X from A to B",
-          # sometimes with a group suffix that also breaks the 100-char
-          # cap). Linting them guards nothing — skip the check entirely.
-          # Key on the PR AUTHOR, not github.actor: a manual re-run or an
-          # `edited` event is triggered by a human account, and linting the
-          # title then would fail exactly the PRs this exempts.
+          # sometimes with a group suffix that also breaks the 100-char cap).
+          # Linting them guards nothing - exempt them entirely. Keyed on the PR
+          # AUTHOR, not github.actor: a manual re-run or an `edited` event is
+          # triggered by a human account, and linting the title then would fail
+          # exactly the PRs this exempts.
           if [ "$AUTHOR" = "dependabot[bot]" ]; then
-            echo "title ok (dependabot, skip lint): $TITLE"
+            echo "title ok (dependabot, exempt)"
+            echo "ok=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          # The Merge/Revert/fixup forms are what GitHub itself generates when a
+          # branch is merged or a commit is squashed - never worth blocking.
           pattern='^(Merge |Revert |fixup! )|^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-zA-Z0-9_./-]+\))?(!)?: .{1,}$'
           if [ ${#TITLE} -le 100 ] && echo "$TITLE" | grep -qE "$pattern"; then
             echo "title ok: $TITLE"
+            echo "ok=true" >> "$GITHUB_OUTPUT"
           else
-            echo "PR title must follow Conventional Commits (and stay under 100 chars):" >&2
-            echo "  type(scope)!: subject   e.g. 'feat(rust): add retry loop'" >&2
-            echo "  types: feat fix docs style refactor perf test build ci chore revert" >&2
-            exit 1
+            # Reported as an output rather than a failure: the failure is raised
+            # by the last step, once the labels and the comment have landed.
+            echo "::warning::PR title must follow Conventional Commits and stay under 100 chars"
+            echo "ok=false" >> "$GITHUB_OUTPUT"
           fi
 
-  size:
-    timeout-minutes: 15
-    name: size
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          persist-credentials: false
-
-      - name: Compute and apply size label
+      - name: Compute and apply the labels
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           IS_FORK: ${{ github.event.pull_request.head.repo.fork }}
           TOO_BIG_THRESHOLD: ${{ inputs.too-big-threshold }}
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+          TITLE: ${{ github.event.pull_request.title }}
+          CURRENT_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
         run: |
           set -euo pipefail
-          # Diff data comes straight from the PR files API: checkout runs
-          # with persist-credentials: false, so any `git fetch` would die
-          # with "could not read Username" (observed on every pia PR since
-          # v1.6.0 — 2026-09-06). gh uses GH_TOKEN, no git creds involved.
-          #
-          # The endpoint caps at 3000 files even with pagination — hitting
-          # the cap means the PR is too big by definition (fail closed).
+
+          # Diff data comes straight from the PR files API: checkout runs with
+          # persist-credentials: false, so any `git fetch` would die with
+          # "could not read Username". gh uses GH_TOKEN, no git creds involved.
+          # The endpoint caps at 3000 files even with pagination - hitting the
+          # cap means the PR is too big by definition (fail closed).
           FILES_JSON="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" --paginate --slurp)"
           file_count="$(echo "${FILES_JSON}" | jq '[.[].[]] | length')"
-          # Added lines excluding generated/lock artifacts.
-          EXCL='(Cargo\.lock|pnpm-lock\.yaml|mix\.lock|uv\.lock|package-lock\.json|yarn\.lock|go\.sum)$'
-          lines_added="$(echo "${FILES_JSON}" | jq --arg re "${EXCL}" \
-            '[.[].[] | select((.filename | test($re)) | not) | .additions] | add // 0')"
-          lines_total="$(echo "${FILES_JSON}" | jq --arg re "${EXCL}" \
-            '[.[].[] | select((.filename | test($re)) | not) | .additions + .deletions] | add // 0')"
-          echo "files=${file_count} added=${lines_added} total=${lines_total} threshold=${TOO_BIG_THRESHOLD}"
 
-          if [ "${file_count}" -ge 3000 ] || [ "${lines_added}" -gt "${TOO_BIG_THRESHOLD}" ]; then
-            label=size/too-big
-          elif [ "${lines_total}" -lt 10 ]; then label=size/S
-          elif [ "${lines_total}" -lt 100 ]; then label=size/M
-          elif [ "${lines_total}" -lt 500 ]; then label=size/L
-          else label=size/XL
+          # ---------------------------------------------------------------
+          # Size: what a human actually reads.
+          #
+          # Three exclusions, all language-aware because these repositories
+          # carry Rust, TypeScript, Elixir and Python:
+          #   - build output and lock files (nobody reads a regenerated lock),
+          #   - tests, in every stack's layout,
+          #   - documentation.
+          # Review effort counts added lines plus the deletions of the files
+          # that also gain some: a file that only loses lines is a removal, and
+          # counting its deletions symmetrically turns a cleanup into an XL.
+          # Bounds calibrated on 65 merged pull requests across the org -
+          # p50 = 8, p75 = 25, p90 = 87, p95 = 102, max = 600 - so each label
+          # separates a real population instead of restating a round number.
+          # ---------------------------------------------------------------
+          EXCLUDE_RE='(^|/)(Cargo\.lock|pnpm-lock\.yaml|package-lock\.json|yarn\.lock|mix\.lock|uv\.lock|poetry\.lock|Pipfile\.lock|go\.sum)$'
+          EXCLUDE_RE="${EXCLUDE_RE}"'|(^|/)(target|dist|build|out|_build|deps|node_modules|\.venv|venv|__pycache__|vendor|generated)(/|$)'
+          EXCLUDE_RE="${EXCLUDE_RE}"'|\.generated\.|\.min\.(js|css)$'
+          TEST_RE='(^|/)(tests?|__tests__|spec)(/|$)|\.spec\.|\.test\.|_test\.exs$|_test\.py$|^test_.*\.py$|(^|/)conftest\.py$'
+          DOC_RE='(^|/)docs?(/|$)|\.(md|txt|rst|adoc)$'
+
+          read -r size_lines size_files <<<"$(echo "${FILES_JSON}" | jq -r \
+            --arg e "${EXCLUDE_RE}" --arg t "${TEST_RE}" --arg d "${DOC_RE}" '
+              [.[].[] | select((.filename | test($e) | not)
+                           and (.filename | test($t) | not)
+                           and (.filename | test($d) | not))]
+              | [(map(.additions + (if .additions > 0 then .deletions else 0 end)) | add // 0), length]
+              | @tsv')"
+
+          # The file-count override catches wide-but-shallow refactors, so it
+          # only applies once the diff is substantial by line count too.
+          if [ "${file_count}" -ge 3000 ] || [ "${size_lines}" -gt "${TOO_BIG_THRESHOLD}" ]; then
+            size_label=size/too-big
+          elif [ "${size_files}" -gt 15 ] && [ "${size_lines}" -ge 150 ]; then
+            size_label=size/XL
+          elif [ "${size_lines}" -ge 300 ]; then size_label=size/XL
+          elif [ "${size_lines}" -ge 100 ]; then size_label=size/L
+          elif [ "${size_lines}" -ge 30 ];  then size_label=size/M
+          elif [ "${size_lines}" -ge 10 ];  then size_label=size/S
+          else size_label=size/XS
           fi
-          echo "label: ${label}"
 
-          # Fork PRs get a read-only GITHUB_TOKEN: label/comment writes below
-          # would fail with HTTP 403 under set -e. Keep the signal visible:
-          # publish the computed size in the job summary instead.
-          if [ "$IS_FORK" = "true" ]; then
-            {
-              echo "## PR size (fork PR — read-only)"
+          # ---------------------------------------------------------------
+          # Risk: what is hard to undo once deployed.
+          # ---------------------------------------------------------------
+          changed="$(echo "${FILES_JSON}" | jq -r '[.[].[] | .filename] | join("\n")')"
+
+          # The org's own boundary list, per repository. A repo without the
+          # file has nothing to match and nothing to classify - and must not
+          # have the label managed either: devtools has no list because its own
+          # trust-boundary-protect workflow marks every PR, so removing the
+          # label here would fight it on every event.
+          boundary_hits=""
+          boundary_file=0
+          if [ -f .github/trust-boundary.yml ]; then
+            boundary_file=1
+            while IFS= read -r file; do
+              [ -n "$file" ] || continue
+              while IFS= read -r pattern; do
+                [ -n "$pattern" ] || continue
+                # shellcheck disable=SC2053
+                if [[ "$file" == $pattern ]]; then
+                  boundary_hits+="- \`$file\` (matched \`$pattern\`)"$'\n'
+                fi
+              done < <(sed -E 's/^[[:space:]]*-[[:space:]]*//' .github/trust-boundary.yml | grep -v '^[[:space:]]*$' | grep -v '^#')
+            done <<< "$changed"
+          fi
+
+          # Destructive migrations, in every stack's dialect: raw SQL (Prisma
+          # and hand-written), Ecto (.exs), Alembic (.py). Only ADDED lines are
+          # inspected - a removed DROP is a good thing. A migration whose patch
+          # cannot be read (too large, renamed, binary) is assumed destructive
+          # rather than let through unflagged.
+          destructive_sql='(?i)DROP\s+(TABLE|COLUMN|CONSTRAINT)|ALTER\s+COLUMN[^;]*TYPE|SET\s+NOT\s+NULL|RENAME|TRUNCATE|DELETE\s+FROM|UPDATE[^;]*SET'
+          destructive_ecto='(?i)drop\s+(table|constraint)\(|rename\s+table\(|delete_all\(|truncate\(|modify\s+[^,]+,\s*null:\s*false'
+          destructive_alembic='(?i)op\.drop_|op\.execute\(.*DROP|nullable\s*=\s*False'
+          MIGRATION_RE='(^|/)(migrations?|versions|priv/repo/migrations)(/|$)'
+          # The added lines are joined once and the three dialects tested
+          # against that single string: piping into `test($s) or test($e)` would
+          # bind only the first test to the pipe and evaluate the other two
+          # against the file object.
+          destructive="$(echo "${FILES_JSON}" | jq -r \
+            --arg m "${MIGRATION_RE}" --arg s "${destructive_sql}" --arg e "${destructive_ecto}" --arg a "${destructive_alembic}" '
+              [.[].[]
+               | select(.filename | test($m))
+               | select(.filename | test("(sql|exs|py)$"))
+               | select(.patch == null
+                        or (([.patch | split("\n")[] | select(startswith("+") and (startswith("+++") | not))] | join("\n"))
+                            | (test($s) or test($e) or test($a))))
+               | .filename] | length')"
+
+          # Deployment and configuration surfaces, across the four stacks.
+          # Each alternative is parenthesised: `a | test(x) or test(y)` binds
+          # only the first test to the pipe.
+          deploy="$(echo "${FILES_JSON}" | jq -r '
+            [.[].[]
+             | select((.filename | test("(^|/)(Dockerfile|docker-compose[^/]*|Makefile|mise\\.toml|\\.env[^/]*)$"))
+                   or (.filename | test("(^|/)(config|configs)/"))
+                   or (.filename | test("\\.(tf|tfvars)$"))
+                   or (.filename | test("^\\.github/workflows/")))
+             | .filename] | length')"
+
+          # A diff that adds and removes nothing executable cannot break
+          # anything, however many modules it spans: every file is documentation
+          # or tests, or its added and removed lines are all blanks and
+          # comments. Heuristic on the patch text, not the AST - a line opening
+          # with `//` inside a multi-line string would be miscounted. A file
+          # without a patch (binary, renamed, too large) never qualifies.
+          inert="$(echo "${FILES_JSON}" | jq -r --arg t "${TEST_RE}" --arg d "${DOC_RE}" '
+            [.[].[]
+             | select((.filename | test($t)) or (.filename | test($d))
+                      or (.status == "modified" and .patch != null
+                          and ([.patch | split("\n")[]
+                                | select((startswith("+") or startswith("-"))
+                                         and (startswith("+++") | not)
+                                         and (startswith("---") | not)) | .[1:]]
+                               | all(test("^\\s*$") or test("^\\s*(//|/\\*|\\*|#|%|--)")))))
+             | .filename] | length')"
+          no_exec=0
+          if [ "${inert}" -eq "${file_count}" ]; then no_exec=1; fi
+
+          risk_detail=""
+          if [ -n "${boundary_hits}" ]; then risk_detail="${risk_detail}trust-boundary files; "; fi
+          if [ "${destructive}" -gt 0 ]; then risk_detail="${risk_detail}destructive migration (${destructive} file(s)); "; fi
+          if [ "${deploy}" -gt 0 ]; then risk_detail="${risk_detail}deployment or configuration (${deploy} file(s)); "; fi
+          if [ "${no_exec}" -eq 1 ]; then risk_detail="docs, tests or comments only"; fi
+          risk_detail="${risk_detail%; }"
+          if [ -z "${risk_detail}" ]; then risk_detail="none"; fi
+
+          if [ -n "${boundary_hits}" ] || [ "${destructive}" -gt 0 ] || [ "${deploy}" -gt 0 ]; then
+            risk_label=risk/high
+          elif [ "${no_exec}" -eq 1 ]; then
+            risk_label=risk/low
+          else
+            risk_label=risk/medium
+          fi
+
+          # Urgent is opt-in: a hotfix branch, a fix title, or a manual flag.
+          # It is never removed - it may have been set by a human.
+          # Membership is read off the JSON array rather than through jq: the
+          # jq variable would sit inside single quotes, which shellcheck reads
+          # as an unexpanded expression.
+          has_label() {
+            case "${CURRENT_LABELS}" in
+              *"\"$1\""*) return 0 ;;
+              *) return 1 ;;
+            esac
+          }
+          urgent=false
+          case "${BRANCH}" in hotfix/*) urgent=true ;; esac
+          if echo "${TITLE}" | grep -qiE '^(fix|hotfix)(\(|:|!| )'; then urgent=true; fi
+          if has_label urgent; then urgent=true; fi
+
+          urgent_suffix=""
+          if [ "${urgent}" = "true" ]; then urgent_suffix=" · \`urgent\`"; fi
+
+          echo "size=${size_label} (${size_lines} lines / ${size_files} files of ${file_count})"
+          echo "risk=${risk_label} (destructive=${destructive} deploy=${deploy} inert=${inert}/${file_count})"
+          echo "urgent=${urgent}"
+
+          # ---- the comment body, posted by the next step ----
+          {
+            echo "<!-- pr-meta-bot -->"
+            echo "## \`${size_label}\` · \`${risk_label}\`${urgent_suffix}"
+            echo ""
+            echo "**Size:** ${size_lines} lines to review across ${size_files} files of ${file_count} — build output, lock files, tests and documentation are excluded."
+            echo ""
+            echo "**Risk signals:** ${risk_detail}"
+            echo ""
+            if [ -n "${boundary_hits}" ]; then
+              echo "### Trust boundary touched"
               echo ""
-              echo "files=${file_count} added=${lines_added} total=${lines_total} -> \`$label\`"
+              echo "${boundary_hits}"
+              echo "Human approval from a code owner (see CODEOWNERS) is **required** before merge."
+              echo ""
+            fi
+            if [ "${size_label}" = "size/too-big" ]; then
+              echo ":no_entry: Above the review-effort limit (${TOO_BIG_THRESHOLD} lines), or past the 3000-file API cap. Split it into independent, mergeable pieces — or remove the \`size/too-big\` label to record a deliberate override."
+              echo ""
+            fi
+            echo "---"
+            echo "<sub>Auto-assigned — size from the diff, risk from the trust-boundary list and per-stack heuristics. Add the \`urgent\` label manually to flag a PR for fast delivery; the bot never removes it.</sub>"
+          } > /tmp/pr-meta.md
+
+          # Fork PRs get a read-only GITHUB_TOKEN: every write below would fail
+          # with HTTP 403 under set -e. Keep every signal visible instead.
+          if [ "${IS_FORK}" = "true" ]; then
+            {
+              echo "## PR meta (fork PR - read-only)"
+              echo ""
+              cat /tmp/pr-meta.md
             } >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
 
           ensure_label() {
-            gh label create "$1" --color "$2" --force >/dev/null 2>&1 || true
+            gh label create "$1" --color "$2" --description "$3" --force >/dev/null 2>&1 || true
           }
-          ensure_label size/too-big b60205
-          ensure_label size/S 0e8a16
-          ensure_label size/M fbca04
-          ensure_label size/L f9d0c4
-          ensure_label size/XL d93f0b
+          ensure_label size/XS 0e8a16 "Tiny PR (<10 lines to review)"
+          ensure_label size/S 0e8a16 "Small PR (<30 lines to review)"
+          ensure_label size/M fbca04 "Medium PR (<100 lines to review)"
+          ensure_label size/L f9d0c4 "Large PR (<300 lines to review)"
+          ensure_label size/XL d93f0b "Extra large PR (>=300 lines to review)"
+          ensure_label size/too-big b60205 "Above the review-effort limit - split it"
+          ensure_label risk/low 0e8a16 "Docs, tests or comments only"
+          ensure_label risk/medium fbca04 "No risk signal detected"
+          ensure_label risk/high d93f0b "Hard to undo - trust boundary, migration, deploy or config"
+          ensure_label urgent ef4444 "Flagged for fast delivery"
+          ensure_label requires-human-review E99695 "Touches trust-boundary files"
 
-          for l in size/too-big size/S size/M size/L size/XL; do
-            if [ "$l" != "$label" ]; then
-              gh pr edit "$PR_NUMBER" --remove-label "$l" >/dev/null 2>&1 || true
+          # Reconcile instead of rewriting: remove only the managed labels that
+          # are no longer wanted, add only the missing ones. Removing and
+          # re-adding an unchanged set wrote two timeline entries per push and
+          # buried the real events under label churn.
+          wanted="${size_label} ${risk_label}"
+          if [ -n "${boundary_hits}" ]; then wanted="${wanted} requires-human-review"; fi
+          if [ "${urgent}" = "true" ]; then wanted="${wanted} urgent"; fi
+
+          managed="size/XS size/S size/M size/L size/XL size/too-big risk/low risk/medium risk/high urgent"
+          # requires-human-review is managed only where the boundary list
+          # exists - see the note above the boundary loop.
+          if [ "${boundary_file}" -eq 1 ]; then managed="${managed} requires-human-review"; fi
+          for l in ${managed}; do
+            case " ${wanted} " in
+              *" ${l} "*) continue ;;
+            esac
+            if has_label "${l}"; then
+              gh pr edit "${PR_NUMBER}" --remove-label "${l}" >/dev/null 2>&1 || true
             fi
           done
-          gh pr edit "$PR_NUMBER" --add-label "$label" >/dev/null
+          # gh takes a comma-separated list: a space-separated one is read as a
+          # single label name and rejected with "not found".
+          add=""
+          for l in ${wanted}; do
+            if ! has_label "${l}"; then
+              add="${add:+${add},}${l}"
+            fi
+          done
+          if [ -n "${add}" ]; then gh pr edit "${PR_NUMBER}" --add-label "${add}" >/dev/null; fi
 
-          if [ "$label" = "size/too-big" ]; then
-            {
-              echo ":no_entry: This PR adds more than ${TOO_BIG_THRESHOLD} lines (excluding generated/lock files) — or exceeds the 3000-file API cap."
-              echo "Split it into independent, mergeable pieces."
-              echo ""
-              echo "Legitimate large refactors: remove the \`size/too-big\` label — the merge gate re-runs green and records the override."
-            } > body.md
-            gh pr comment "$PR_NUMBER" --body-file body.md >/dev/null
-            rm -f body.md
-          elif [ "$label" = "size/XL" ]; then
-            {
-              echo ':warning: This PR changes **500+ lines**. Large PRs are harder to review thoroughly - consider splitting it into independent, mergeable pieces if the change allows it.'
-            } > body.md
-            gh pr comment "$PR_NUMBER" --body-file body.md >/dev/null
-            rm -f body.md
-          fi
-
-  risk:
-    timeout-minutes: 15
-    name: risk
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          persist-credentials: false
-
-      - name: Compute and apply risk label
+      - name: Post or update the explanation
+        if: ${{ github.event.pull_request.head.repo.fork != true }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          IS_FORK: ${{ github.event.pull_request.head.repo.fork }}
         run: |
           set -euo pipefail
-          # PR files API again — see the size job for why (no git creds).
-          changed="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" --paginate --slurp \
-            | jq -r '[.[].[] | .filename] | join("\n")')"
-          [ -n "$changed" ] || exit 0
-
-          matches_pattern() {
-            local file="$1" pattern
-            while IFS= read -r pattern; do
-              [ -n "$pattern" ] || continue
-              # shellcheck disable=SC2053
-              if [[ "$file" == $pattern ]]; then return 0; fi
-            done < <(sed -E 's/^[[:space:]]*-[[:space:]]*//' .github/trust-boundary.yml | grep -v '^[[:space:]]*$' | grep -v '^#')
-            return 1
-          }
-
-          high=0; docs_only=1
-          while IFS= read -r file; do
-            if matches_pattern "$file"; then high=1; fi
-            if ! echo "$file" | grep -qE '(^docs/|\.md$)'; then docs_only=0; fi
-          done <<< "$changed"
-
-          if [ "$high" -eq 1 ]; then label=risk/high
-          elif [ "$docs_only" -eq 1 ]; then label=risk/low
-          else label=risk/medium
-          fi
-          echo "risk: $label"
-
-          # Fork PRs get a read-only GITHUB_TOKEN: label writes below would
-          # fail with HTTP 403 under set -e. Keep the signal visible: publish
-          # the computed risk in the job summary instead.
-          if [ "$IS_FORK" = "true" ]; then
-            {
-              echo "## PR risk (fork PR — read-only)"
-              echo ""
-              echo "risk: \`$label\`"
-            } >> "$GITHUB_STEP_SUMMARY"
-            exit 0
+          # Match on our own comment, not on the marker alone: anyone can post
+          # a comment carrying it, and the update would then fail on someone
+          # else's. Same rule as the other bot comments in this org.
+          comment_id="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" --paginate \
+            --jq '[.[] | select(.user.login == "github-actions[bot]" and (.body | contains("<!-- pr-meta-bot -->")))] | last | .id // empty')"
+          jq -Rs '{body: .}' /tmp/pr-meta.md > /tmp/pr-meta.json
+          if [ -n "${comment_id}" ]; then
+            gh api "repos/${GITHUB_REPOSITORY}/issues/comments/${comment_id}" --method PATCH --input /tmp/pr-meta.json >/dev/null
+          else
+            gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" --method POST --input /tmp/pr-meta.json >/dev/null
           fi
 
-          ensure_label() {
-            gh label create "$1" --color "$2" --force >/dev/null 2>&1 || true
-          }
-          ensure_label risk/low 0e8a16
-          ensure_label risk/medium fbca04
-          ensure_label risk/high d93f0b
-
-          for l in risk/low risk/medium risk/high; do
-            if [ "$l" != "$label" ]; then
-              gh pr edit "$PR_NUMBER" --remove-label "$l" >/dev/null 2>&1 || true
-            fi
-          done
-          gh pr edit "$PR_NUMBER" --add-label "$label" >/dev/null
+      - name: Report an invalid title
+        # Last, so a bad title costs neither the labels nor the comment.
+        if: ${{ steps.title.outputs.ok == 'false' }}
+        run: |
+          echo "::error::PR title must follow Conventional Commits and stay under 100 chars."
+          echo "  type(scope)!: subject   e.g. 'feat(rust): add retry loop'" >&2
+          echo "  types: feat fix docs style refactor perf test build ci chore revert" >&2
+          exit 1
