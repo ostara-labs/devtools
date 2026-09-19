@@ -12,9 +12,11 @@ name: CI
 #   ci / core, ci / rust / rust, ci / elixir / elixir,
 #   ci / typescript / typescript, ci / python / python,
 #   ci / docs-drift / Docs drift (DOC_MAP), ci / gate
-# Language stack jobs never report "skipped": each detects its stack
-# internally and concludes SUCCESS vacuously when absent (only
-# test-postgis skips), so ONE ruleset fits every repo. Renaming the
+# Language stack jobs are skipped outright when their manifest is absent
+# (decided once in `core`): a skipped job starts no runner, where a vacuous
+# one still paid a startup to conclude nothing. `gate` treats "skipped" as a
+# designed outcome, and the ruleset requires the aggregate `ci / gate` — not
+# the individual stacks — so one ruleset still fits every repo. Renaming the
 # caller job makes the required contexts never report: merge blocks loudly.
 # Language jobs call sibling workflows locally (./) — those resolve from
 # THIS repository even when called cross-repo (proven by the pilot). The
@@ -51,7 +53,45 @@ jobs:
     timeout-minutes: 15
     name: core
     runs-on: ubuntu-24.04
+    outputs:
+      rust: ${{ steps.stacks.outputs.rust }}
+      elixir: ${{ steps.stacks.outputs.elixir }}
+      typescript: ${{ steps.stacks.outputs.typescript }}
+      python: ${{ steps.stacks.outputs.python }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Which stacks are present is decided HERE, once, so an absent stack's
+      # job never starts a runner at all: a vacuous job still pays a runner
+      # startup, a skipped one costs nothing. The manifest path follows the
+      # same stack-dir rule the language workflows use, so a single-stack
+      # repo with `stack-dir: "."` is detected correctly too.
+      #
+      # Safe for every consumer: the ruleset requires only `ci / gate` and
+      # `merge-gate` (see scripts/setup-rulesets.sh), so a missing
+      # `ci / <stack>` context is not a merge blocker, and `gate` already
+      # treats "skipped" as a designed outcome.
+      #
+      # Placed before org-gate on purpose: the outputs must exist even when
+      # the gate step fails, otherwise a failing lint would also silence the
+      # test jobs.
+      - name: Detect present stacks
+        id: stacks
+        shell: bash
+        env:
+          STACK_DIR: ${{ inputs['stack-dir'] }}
+        run: |
+          has() { if [ -f "$1/$2" ]; then echo true; else echo false; fi; }
+          {
+            echo "rust=$(has "${STACK_DIR:-rust}" Cargo.toml)"
+            echo "elixir=$(has "${STACK_DIR:-elixir}" mix.exs)"
+            echo "typescript=$(has "${STACK_DIR:-typescript}" package.json)"
+            echo "python=$(has "${STACK_DIR:-python}" pyproject.toml)"
+          } >> "$GITHUB_OUTPUT"
+
       # Remote self-reference pinned by digest: local `uses: ./` action
       # references resolve against the CALLER's workspace when this
       # aggregate is invoked via workflow_call from another repo (proven
@@ -73,19 +113,31 @@ jobs:
             echo "no hooks/ directory — skipping extensionless hooks shellcheck"
           fi
 
+  # The four language jobs run only when their manifest exists (decided in
+  # `core`). When skipped, the check `ci / <stack>` simply does not report —
+  # which is why `gate` accepts "skipped" and why the ruleset requires the
+  # aggregate, not the individual stacks.
   rust:
+    needs: core
+    if: ${{ !cancelled() && needs.core.outputs.rust == 'true' }}
     uses: ./.github/workflows/rust-ci.yml
     with:
       stack-dir: ${{ inputs['stack-dir'] != '' && inputs['stack-dir'] || 'rust' }}
   elixir:
+    needs: core
+    if: ${{ !cancelled() && needs.core.outputs.elixir == 'true' }}
     uses: ./.github/workflows/elixir-ci.yml
     with:
       stack-dir: ${{ inputs['stack-dir'] != '' && inputs['stack-dir'] || 'elixir' }}
   typescript:
+    needs: core
+    if: ${{ !cancelled() && needs.core.outputs.typescript == 'true' }}
     uses: ./.github/workflows/typescript-ci.yml
     with:
       stack-dir: ${{ inputs['stack-dir'] != '' && inputs['stack-dir'] || 'typescript' }}
   python:
+    needs: core
+    if: ${{ !cancelled() && needs.core.outputs.python == 'true' }}
     uses: ./.github/workflows/python-ci.yml
     with:
       stack-dir: ${{ inputs['stack-dir'] != '' && inputs['stack-dir'] || 'python' }}
