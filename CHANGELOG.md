@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.13.0](https://github.com/ostara-labs/devtools/compare/v1.12.1...v1.13.0) (2026-09-15)
+
+
+### Features
+
+* **makefiles:** stage the bump and print the next step in devtools-update ([#60](https://github.com/ostara-labs/devtools/issues/60)) ([a3c1b87](https://github.com/ostara-labs/devtools/commit/a3c1b875f92e35fcfd131ed3f5fcd7c663585195))
+
 ## [1.12.1](https://github.com/ostara-labs/devtools/compare/v1.12.0...v1.12.1) (2026-09-14)
 
 
