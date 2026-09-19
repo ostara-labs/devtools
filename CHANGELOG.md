@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.13.3](https://github.com/ostara-labs/devtools/compare/v1.13.2...v1.13.3) (2026-09-19)
+
+
+### Performance Improvements
+
+* **ci:** collapse pr-meta into one job and enrich every axis ([#68](https://github.com/ostara-labs/devtools/issues/68)) ([e508060](https://github.com/ostara-labs/devtools/commit/e5080605b29914e8cd89d9db44b998064b4be99e))
+
 ## [1.13.2](https://github.com/ostara-labs/devtools/compare/v1.13.1...v1.13.2) (2026-09-19)
 
 
