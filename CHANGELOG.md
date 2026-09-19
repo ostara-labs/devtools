@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.13.1](https://github.com/ostara-labs/devtools/compare/v1.13.0...v1.13.1) (2026-09-19)
+
+
+### Bug Fixes
+
+* **ai-review:** pin the reviewer to a released image and check the credential first ([#62](https://github.com/ostara-labs/devtools/issues/62)) ([b5d3237](https://github.com/ostara-labs/devtools/commit/b5d3237e80525ebd8b2be3f1356d3b83801a683c))
+
 ## [1.13.0](https://github.com/ostara-labs/devtools/compare/v1.12.1...v1.13.0) (2026-09-15)
 
 
