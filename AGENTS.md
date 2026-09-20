@@ -67,6 +67,15 @@ succeeded, and no blocking label is present. Blocking labels:
 `Possible security concern` and `size: too-big`. Removing a blocking label is
 the audited override.
 
+### Cutting a release
+
+`release.yml` runs release-please (`release-type: simple`, default config):
+only `feat` / `fix` / `perf` commits are "user facing" and bump a version.
+A `ci:` / `chore:` / `docs:` commit passes the commit hooks but **cuts no
+release** — it strands on `main`, and no consumer can bump its pinned digest
+to it. Type any change a consumer must receive as `perf(<scope>):` or
+`feat(<scope>):`.
+
 ## Trust boundary
 
 This repo is the org's trust-boundary hub: the hooks and CI workflows here
