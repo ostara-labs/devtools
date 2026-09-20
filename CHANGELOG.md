@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.13.5](https://github.com/ostara-labs/devtools/compare/v1.13.4...v1.13.5) (2026-09-20)
+
+
+### Performance Improvements
+
+* **ci:** document which commit types cut a release ([#75](https://github.com/ostara-labs/devtools/issues/75)) ([8952831](https://github.com/ostara-labs/devtools/commit/8952831299726c5981ba656dda3d1f71f94c1bba))
+
 ## [1.13.4](https://github.com/ostara-labs/devtools/compare/v1.13.3...v1.13.4) (2026-09-20)
 
 
