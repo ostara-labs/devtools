@@ -265,8 +265,10 @@ jobs:
       - name: Verify all gates passed
         env:
           RESULTS: ${{ join(needs.*.result, ' ') }}
+          CORE_OUTPUTS: ${{ toJSON(needs.core.outputs) }}
         run: |
           echo "needs results: $RESULTS"
+          echo "core outputs: $CORE_OUTPUTS"
           for result in $RESULTS; do
             # "skipped" is a designed outcome, not a failure: the language
             # stack jobs never skip (they detect their stack internally and
