@@ -28,7 +28,7 @@ hop, no context loss (the caller's pull_request event flows through
    the pre-AI era.
 2. **`ai-review`** — runs only if CI succeeded and the PR is not a draft.
    PR-Agent posts one persistent review comment, adds labels
-   (`review effort x/5`, `possible security issue`) and a merge
+   (`Review effort x/5`, `Possible security concern`) and a merge
    recommendation. Zero model spend on drafts and on red CI.
 3. **`merge-gate`** — a plain job (its check run is the required status
    check) that fails unless all three conditions hold:
@@ -37,9 +37,28 @@ hop, no context loss (the caller's pull_request event flows through
       "the step exited 0" (see *Failure visibility*)
    3. no blocking label on the PR
 
-Blocking labels (default): `possible security issue` (set by the review)
-and `size/too-big` (more than 1000 added lines excluding generated/lock
+Blocking labels (default): `Possible security concern` (set by the review)
+and `size: too-big` (more than 1000 added lines excluding generated/lock
 files, or the 3000-file API cap — set by `pr-meta`).
+
+PR-Agent only ever creates `Review effort x/5` and `Possible security
+concern`; every other label below comes from `pr-meta`.
+
+### PR labels
+
+`pr-meta` classifies every PR on two axes. Names read `<family>: <value>`:
+
+| Label | Meaning |
+|---|---|
+| `size: XS` … `size: XL` | lines a reviewer must read (added lines, minus lock/build/test/docs) |
+| `size: too-big` | above the review-effort limit — **blocks the merge** |
+| `risk: low` | docs, tests or comments only |
+| `risk: normal` | no risk signal detected |
+| `risk: high` | trust boundary, migration, deploy or config |
+| `urgent` | opted in by a `hotfix/*` branch, a `fix` title, or the label itself |
+
+`requires-human-review` is added where the repo carries a
+`.github/trust-boundary.yml`.
 
 **Override** (deliberate, audited): remove the blocking label — the
 `unlabeled` event re-fires the pipeline, the gate turns green, and the

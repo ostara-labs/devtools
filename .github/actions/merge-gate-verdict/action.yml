@@ -19,7 +19,7 @@ inputs:
   blocking-labels:
     description: 'JSON array of labels that block the merge'
     required: false
-    default: '["possible security issue", "size/too-big"]'
+    default: '["Possible security concern", "size: too-big"]'
 
 runs:
   using: composite
