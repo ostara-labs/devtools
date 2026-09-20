@@ -20,7 +20,7 @@ on:
   # Merge-queue entries. The queue tests the PR merged onto the current base
   # BEFORE merging it, so the required contexts must report here too:
   # `ci / gate` does, and `merge-gate` is adapted below. The review is not
-  # re-run in the queue — the PR only gets in with its checks green.
+  # re-run in the queue â€” the PR only gets in with its checks green.
   merge_group:
 
 concurrency:
@@ -34,7 +34,7 @@ jobs:
     name: ci
     permissions:
       contents: read
-    uses: ostara-labs/devtools/.github/workflows/ci.yml@a78437252731f8965e380e2ce0baa6a3cef594dd # v1.13.3
+    uses: ostara-labs/devtools/.github/workflows/ci.yml@546825a410ec1258d4c7bcb87bc0b49b5ea0e5b1 # path-filtered stacks + dependabot-exempt review (pre-release commit)
 
   # Self-adoption, like the ci job above: the hub classifies its own PRs with
   # the workflow it ships. pull_request only - a push or a merge-queue entry
@@ -45,7 +45,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
-    uses: ostara-labs/devtools/.github/workflows/pr-meta.yml@a78437252731f8965e380e2ce0baa6a3cef594dd # v1.13.3
+    uses: ostara-labs/devtools/.github/workflows/pr-meta.yml@546825a410ec1258d4c7bcb87bc0b49b5ea0e5b1 # path-filtered stacks + dependabot-exempt review (pre-release commit)
 
   ai-review:
     name: ai-review
@@ -55,7 +55,7 @@ jobs:
       contents: read
       issues: write
       pull-requests: write
-    uses: ostara-labs/devtools/.github/workflows/ai-review.yml@a78437252731f8965e380e2ce0baa6a3cef594dd # v1.13.3
+    uses: ostara-labs/devtools/.github/workflows/ai-review.yml@546825a410ec1258d4c7bcb87bc0b49b5ea0e5b1 # path-filtered stacks + dependabot-exempt review (pre-release commit)
     secrets:
       AI_REVIEW_OPENROUTER_API_KEY: ${{ secrets.AI_REVIEW_OPENROUTER_API_KEY }}
 
@@ -65,7 +65,7 @@ jobs:
     needs: [ci, ai-review]
     # Two shapes. On pull_request: the real verdict. On merge_group: the entry
     # only exists because the PR's required checks were green, so the review is
-    # already settled — hardcoding 'success' is a statement about the queue's
+    # already settled â€” hardcoding 'success' is a statement about the queue's
     # precondition, not a bypass. The label list is passed as '[]' because a
     # merge-queue entry has no labels and the verdict action would choke on
     # `jq` over a null array.
@@ -75,7 +75,7 @@ jobs:
       contents: read
     steps:
       - name: Verdict
-        uses: ostara-labs/devtools/.github/actions/merge-gate-verdict@a78437252731f8965e380e2ce0baa6a3cef594dd # v1.13.3
+        uses: ostara-labs/devtools/.github/actions/merge-gate-verdict@546825a410ec1258d4c7bcb87bc0b49b5ea0e5b1 # path-filtered stacks + dependabot-exempt review (pre-release commit)
         with:
           ci-result: ${{ needs.ci.result }}
           review-result: ${{ github.event_name == 'merge_group' && 'success' || needs.ai-review.result }}

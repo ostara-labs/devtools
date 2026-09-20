@@ -35,6 +35,16 @@ jobs:
     name: review
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # Dependabot pull requests are exempt. Their titles and bodies are
+    # machine-generated ("Bump X from A to B") and the diff is a version
+    # number: there is no prose to review and nothing to improve. Reviewing
+    # them spends the OpenRouter quota on mechanical bumps, and makes every
+    # bump wait on a 240 MB container pull.
+    #
+    # The exemption does not block the merge: `merge-gate` treats a skipped
+    # review as settled when CI succeeded - see merge-gate-verdict. A review
+    # that FAILS still fails the gate; only a deliberate skip passes.
+    if: ${{ github.event.pull_request.user.login != 'dependabot[bot]' }}
     permissions:
       contents: read
       issues: write

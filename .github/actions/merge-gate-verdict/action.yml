@@ -1,8 +1,8 @@
 name: 'Merge gate verdict'
 description: >-
-  Fails unless CI succeeded, the AI review succeeded, and no blocking
-  label is present. Draft PRs pass vacuously (ready_for_review re-fires
-  the pipeline with the real verdict).
+  Fails unless CI succeeded, the AI review succeeded or was deliberately
+  skipped, and no blocking label is present. Draft PRs pass vacuously
+  (ready_for_review re-fires the pipeline with the real verdict).
 inputs:
   ci-result:
     description: 'needs result of the CI job (success expected)'
@@ -42,7 +42,14 @@ runs:
           echo "::error::Condition 1 failed: CI result is ${CI_RESULT}"
           exit 1
         fi
-        if [ "${REVIEW_RESULT}" != "success" ]; then
+        # A SKIPPED review is a designed outcome, not a failure. ai-review
+        # exempts dependabot pull requests - machine-generated bumps with no
+        # prose and nothing to improve. CI already succeeded by the time we
+        # reach this line, so a skip here cannot mean a broken reviewer: a
+        # reviewer that fails now fails the job by design
+        # (CONFIG.PROPAGATE_TOOL_ERRORS). The exemption therefore passes the
+        # gate without opening it.
+        if [ "${REVIEW_RESULT}" != "success" ] && [ "${REVIEW_RESULT}" != "skipped" ]; then
           echo "::error::Condition 2 failed: AI review result is ${REVIEW_RESULT}"
           exit 1
         fi
