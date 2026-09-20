@@ -34,7 +34,7 @@ jobs:
     name: ci
     permissions:
       contents: read
-    uses: ostara-labs/devtools/.github/workflows/ci.yml@546825a410ec1258d4c7bcb87bc0b49b5ea0e5b1 # path-filtered stacks + dependabot-exempt review (pre-release commit)
+    uses: ostara-labs/devtools/.github/workflows/ci.yml@667a3e5c2bd1b770745e0f455076dafcba07b44a # v1.13.4
 
   # Self-adoption, like the ci job above: the hub classifies its own PRs with
   # the workflow it ships. pull_request only - a push or a merge-queue entry
@@ -45,7 +45,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
-    uses: ostara-labs/devtools/.github/workflows/pr-meta.yml@546825a410ec1258d4c7bcb87bc0b49b5ea0e5b1 # path-filtered stacks + dependabot-exempt review (pre-release commit)
+    uses: ostara-labs/devtools/.github/workflows/pr-meta.yml@667a3e5c2bd1b770745e0f455076dafcba07b44a # v1.13.4
 
   ai-review:
     name: ai-review
@@ -55,7 +55,7 @@ jobs:
       contents: read
       issues: write
       pull-requests: write
-    uses: ostara-labs/devtools/.github/workflows/ai-review.yml@546825a410ec1258d4c7bcb87bc0b49b5ea0e5b1 # path-filtered stacks + dependabot-exempt review (pre-release commit)
+    uses: ostara-labs/devtools/.github/workflows/ai-review.yml@667a3e5c2bd1b770745e0f455076dafcba07b44a # v1.13.4
     secrets:
       AI_REVIEW_OPENROUTER_API_KEY: ${{ secrets.AI_REVIEW_OPENROUTER_API_KEY }}
 
@@ -75,7 +75,7 @@ jobs:
       contents: read
     steps:
       - name: Verdict
-        uses: ostara-labs/devtools/.github/actions/merge-gate-verdict@546825a410ec1258d4c7bcb87bc0b49b5ea0e5b1 # path-filtered stacks + dependabot-exempt review (pre-release commit)
+        uses: ostara-labs/devtools/.github/actions/merge-gate-verdict@667a3e5c2bd1b770745e0f455076dafcba07b44a # v1.13.4
         with:
           ci-result: ${{ needs.ci.result }}
           review-result: ${{ github.event_name == 'merge_group' && 'success' || needs.ai-review.result }}
