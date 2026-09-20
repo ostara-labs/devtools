@@ -73,8 +73,8 @@ the audited override.
 only `feat` / `fix` / `perf` commits are "user facing" and bump a version.
 A `ci:` / `chore:` / `docs:` commit passes the commit hooks but **cuts no
 release** — it strands on `main`, and no consumer can bump its pinned digest
-to it. Type any change a consumer must receive as `perf(<scope>):` or
-`feat(<scope>):`.
+to it. Type any change a consumer must receive as `feat(<scope>):`,
+`fix(<scope>):` or `perf(<scope>):`.
 
 ## Trust boundary
 
