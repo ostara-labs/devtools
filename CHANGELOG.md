@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.13.4](https://github.com/ostara-labs/devtools/compare/v1.13.3...v1.13.4) (2026-09-20)
+
+
+### Performance Improvements
+
+* **ci:** filter stack CI by changed paths, and skip ai-review on dependabot ([#71](https://github.com/ostara-labs/devtools/issues/71)) ([deb2195](https://github.com/ostara-labs/devtools/commit/deb219577b538ad8e5671a7dbaffa62b82cbf51b))
+
 ## [1.13.3](https://github.com/ostara-labs/devtools/compare/v1.13.2...v1.13.3) (2026-09-19)
 
 
