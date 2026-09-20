@@ -64,7 +64,7 @@ Absent stacks succeed vacuously, so one ruleset fits every repo.
 The PR pipeline (`pr-pipeline.yml`) chains `ci` → `ai-review` → `merge-gate`.
 `merge-gate` is the merge gate: it fails unless CI succeeded, AI review
 succeeded, and no blocking label is present. Blocking labels:
-`possible security issue` and `size/too-big`. Removing a blocking label is
+`Possible security concern` and `size: too-big`. Removing a blocking label is
 the audited override.
 
 ## Trust boundary
@@ -84,7 +84,7 @@ review, it could weaken the hooks that enforce its own code quality.
 PR-Agent runs on every non-draft PR with green CI (zero model spend on
 drafts and red CI). It auto-loads this `AGENTS.md` from the default branch
 as the repo's conventions. It posts one persistent review comment, adds
-labels (`review effort x/5`, `possible security issue`) and a merge
+labels (`Review effort x/5`, `Possible security concern`) and a merge
 recommendation. Green checks mean the review **ran** — never that its
 findings were addressed: triage every thread (fix, or reply with a
 justification and resolve) before merging.
