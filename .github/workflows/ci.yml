@@ -64,11 +64,20 @@ jobs:
       elixir: ${{ steps.stacks.outputs.elixir }}
       typescript: ${{ steps.stacks.outputs.typescript }}
       python: ${{ steps.stacks.outputs.python }}
+      changed_rust: ${{ steps.changed.outputs.rust }}
+      changed_elixir: ${{ steps.changed.outputs.elixir }}
+      changed_typescript: ${{ steps.changed.outputs.typescript }}
+      changed_python: ${{ steps.changed.outputs.python }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # Full history: the changed-stack detection below diffs against a
+          # base commit that a shallow clone never fetched. A depth-1 checkout
+          # would make every diff fail, and the safe fallback would then run
+          # every stack - correct, but the filter would never do anything.
+          fetch-depth: 0
 
       # Which stacks are present is decided HERE, once, so an absent stack's
       # job never starts a runner at all: a vacuous job still pays a runner
@@ -97,6 +106,88 @@ jobs:
             echo "typescript=$(has "${STACK_DIR:-typescript}" package.json)"
             echo "python=$(has "${STACK_DIR:-python}" pyproject.toml)"
           } >> "$GITHUB_OUTPUT"
+
+      # Which stacks this change actually touches. Running every stack on every
+      # event pays a runner for work that cannot fail: a dependency bump under
+      # typescript/ says nothing about the Rust crate, and a docs-only change
+      # says nothing about any of the four.
+      #
+      # The default is deliberately the SAFE direction. A path that is neither
+      # under a stack directory nor recognisably documentation marks EVERY
+      # stack as changed, because a filter that forgets a shared file stops
+      # testing a stack silently - and nobody sees the stack that no longer
+      # runs. Over-running shows up in the bill, under-running does not show up
+      # at all. Same reasoning that makes `gate` accept "skipped": a false
+      # alarm costs a minute, a missed one costs the guarantee.
+      - name: Detect changed stacks
+        id: changed
+        shell: bash
+        env:
+          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
+          MQ_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          STACK_DIR: ${{ inputs['stack-dir'] }}
+        run: |
+          set -euo pipefail
+
+          # The three event shapes the org-gate base already handles: a pull
+          # request carries its base branch, a merge-queue entry its base sha,
+          # a push the previous commit.
+          if [ -n "${PR_BASE_REF:-}" ]; then base="origin/${PR_BASE_REF}"
+          elif [ -n "${MQ_BASE_SHA:-}" ]; then base="${MQ_BASE_SHA}"
+          else base="${PUSH_BEFORE:-}"; fi
+
+          every_stack() {
+            printf '%s\n' rust=true elixir=true typescript=true python=true
+          }
+
+          if [ -z "$base" ] || ! git rev-parse --verify --quiet "${base}^{commit}" >/dev/null; then
+            echo "no usable base (${base:-empty}) - every stack runs"
+            every_stack >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          files="$(git diff --name-only "$base" HEAD)"
+          echo "base: $base"
+          printf 'changed files:\n%s\n' "$files"
+
+          hit_rust=false; hit_elixir=false; hit_typescript=false; hit_python=false
+          outside=false
+          while IFS= read -r f; do
+            [ -n "$f" ] || continue
+            # Documentation cannot break a stack: a README or a page under
+            # docs/ changes nothing the four stacks compile or test.
+            case "$f" in
+              docs/*|*.md|*.txt|LICENSE) continue ;;
+            esac
+            matched=false
+            for s in rust elixir typescript python; do
+              # stack-dir "." means the repo is single-stack with its manifest
+              # at the root: every path is that stack's path.
+              if [ "${STACK_DIR:-$s}" = "." ] || [ "${f#"${STACK_DIR:-$s}"/}" != "$f" ]; then
+                case "$s" in
+                  rust) hit_rust=true ;;
+                  elixir) hit_elixir=true ;;
+                  typescript) hit_typescript=true ;;
+                  python) hit_python=true ;;
+                esac
+                matched=true
+              fi
+            done
+            if [ "$matched" = false ]; then outside=true; fi
+          done <<< "$files"
+
+          if [ "$outside" = true ]; then
+            echo "a path outside every stack directory changed - every stack runs"
+            every_stack >> "$GITHUB_OUTPUT"
+          else
+            {
+              echo "rust=${hit_rust}"
+              echo "elixir=${hit_elixir}"
+              echo "typescript=${hit_typescript}"
+              echo "python=${hit_python}"
+            } >> "$GITHUB_OUTPUT"
+          fi
 
       # Remote self-reference pinned by digest: local `uses: ./` action
       # references resolve against the CALLER's workspace when this
@@ -129,25 +220,25 @@ jobs:
   # aggregate, not the individual stacks.
   rust:
     needs: core
-    if: ${{ !cancelled() && needs.core.outputs.rust == 'true' }}
+    if: ${{ !cancelled() && needs.core.outputs.rust == 'true' && needs.core.outputs.changed_rust == 'true' }}
     uses: ./.github/workflows/rust-ci.yml
     with:
       stack-dir: ${{ inputs['stack-dir'] != '' && inputs['stack-dir'] || 'rust' }}
   elixir:
     needs: core
-    if: ${{ !cancelled() && needs.core.outputs.elixir == 'true' }}
+    if: ${{ !cancelled() && needs.core.outputs.elixir == 'true' && needs.core.outputs.changed_elixir == 'true' }}
     uses: ./.github/workflows/elixir-ci.yml
     with:
       stack-dir: ${{ inputs['stack-dir'] != '' && inputs['stack-dir'] || 'elixir' }}
   typescript:
     needs: core
-    if: ${{ !cancelled() && needs.core.outputs.typescript == 'true' }}
+    if: ${{ !cancelled() && needs.core.outputs.typescript == 'true' && needs.core.outputs.changed_typescript == 'true' }}
     uses: ./.github/workflows/typescript-ci.yml
     with:
       stack-dir: ${{ inputs['stack-dir'] != '' && inputs['stack-dir'] || 'typescript' }}
   python:
     needs: core
-    if: ${{ !cancelled() && needs.core.outputs.python == 'true' }}
+    if: ${{ !cancelled() && needs.core.outputs.python == 'true' && needs.core.outputs.changed_python == 'true' }}
     uses: ./.github/workflows/python-ci.yml
     with:
       stack-dir: ${{ inputs['stack-dir'] != '' && inputs['stack-dir'] || 'python' }}
