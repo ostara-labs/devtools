@@ -34,7 +34,7 @@ jobs:
     name: ci
     permissions:
       contents: read
-    uses: ostara-labs/devtools/.github/workflows/ci.yml@667a3e5c2bd1b770745e0f455076dafcba07b44a # v1.13.4
+    uses: ostara-labs/devtools/.github/workflows/ci.yml@baee7f9beddb68072e7c2c53c7e17da39bb03e1f # v1.13.5
 
   # Self-adoption, like the ci job above: the hub classifies its own PRs with
   # the workflow it ships. pull_request only - a push or a merge-queue entry
@@ -45,7 +45,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
-    uses: ostara-labs/devtools/.github/workflows/pr-meta.yml@667a3e5c2bd1b770745e0f455076dafcba07b44a # v1.13.4
+    uses: ostara-labs/devtools/.github/workflows/pr-meta.yml@baee7f9beddb68072e7c2c53c7e17da39bb03e1f # v1.13.5
 
   ai-review:
     name: ai-review
@@ -55,7 +55,7 @@ jobs:
       contents: read
       issues: write
       pull-requests: write
-    uses: ostara-labs/devtools/.github/workflows/ai-review.yml@667a3e5c2bd1b770745e0f455076dafcba07b44a # v1.13.4
+    uses: ostara-labs/devtools/.github/workflows/ai-review.yml@baee7f9beddb68072e7c2c53c7e17da39bb03e1f # v1.13.5
     secrets:
       AI_REVIEW_OPENROUTER_API_KEY: ${{ secrets.AI_REVIEW_OPENROUTER_API_KEY }}
 
@@ -75,7 +75,7 @@ jobs:
       contents: read
     steps:
       - name: Verdict
-        uses: ostara-labs/devtools/.github/actions/merge-gate-verdict@667a3e5c2bd1b770745e0f455076dafcba07b44a # v1.13.4
+        uses: ostara-labs/devtools/.github/actions/merge-gate-verdict@baee7f9beddb68072e7c2c53c7e17da39bb03e1f # v1.13.5
         with:
           ci-result: ${{ needs.ci.result }}
           review-result: ${{ github.event_name == 'merge_group' && 'success' || needs.ai-review.result }}
