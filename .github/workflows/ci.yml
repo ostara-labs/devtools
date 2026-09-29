@@ -197,7 +197,7 @@ jobs:
       # resolved fine). The composite must therefore be fetched from this
       # repository by digest. Bump the digest in the same PR whenever
       # org-gate changes.
-      - uses: ostara-labs/devtools/.github/actions/org-gate@00bb25735ed4b33a8b81a0530c5321a51cfb74f9 # v1.3.1
+      - uses: ostara-labs/devtools/.github/actions/org-gate@baee7f9beddb68072e7c2c53c7e17da39bb03e1f # v1.13.5
         with:
           # Three events, three shapes: pull_request carries the base, a
           # merge-queue entry carries merge_group.base_sha, a push carries
