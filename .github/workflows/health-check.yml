@@ -1,0 +1,63 @@
+name: Org Health Check
+
+# One issue in this repository reports whether the shared tooling works, and
+# its reopening is what notifies. See docs/health-check.md.
+#
+# The design point worth knowing before editing: the check reads the LAST RUN
+# of each monitored workflow per repo, never a failure count. Counting would
+# report 166 problems on ostara-labs/bot where the real number is one, because
+# a single dead cron repeats every fifteen minutes.
+#
+# Requires org-wide read access to enumerate repositories and read their
+# workflow runs — the built-in GITHUB_TOKEN is scoped to this repo only.
+# Same auth chain as drift-scan: App installation token preferred, PAT
+# fallback. Issue writes use the built-in token, which carries issues: write
+# on this repository.
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: health-check
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Mint App installation token
+        id: app-token
+        if: vars.DEVTOOLS_APP_ID != ''
+        continue-on-error: true
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        with:
+          app-id: ${{ vars.DEVTOOLS_APP_ID }}
+          private-key: ${{ secrets.DEVTOOLS_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      - name: Run health check
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.ORG_AUDIT_TOKEN || secrets.GITHUB_TOKEN }}
+          ISSUE_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Issue writes use the built-in token: neither the App token (when
+          # scoped read) nor a read-scoped PAT inherits this repo's issues:
+          # write permission, and search/issues rejects a token that cannot
+          # write to the repo it searches.
+          GH_TOKEN="$ISSUE_TOKEN" bash scripts/health-check.sh
