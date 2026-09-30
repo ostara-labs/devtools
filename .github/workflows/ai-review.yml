@@ -109,3 +109,18 @@ jobs:
           # failed review fails the job, `merge-gate` fails with it, and the PR
           # is blocked until the review runs for real.
           CONFIG.PROPAGATE_TOOL_ERRORS: 'true'
+          # A reasoning model spends most of its wall-clock on tokens the
+          # caller never sees. On a ~11k-token review prompt this model emits a
+          # full reasoning trace before its YAML verdict, so the second pass
+          # (/improve, three committable suggestions) routinely ran past the
+          # upstream ai_timeout of 120 s. PR-Agent's default is to RETRY THE
+          # SAME MODEL on timeout — same prompt, same length, same overrun — so
+          # the pass looped until this job's 20-minute ceiling killed it and
+          # merge-gate failed on `cancelled`.
+          #
+          # 300 s covers a legitimate generation; refusing the same-model retry
+          # is what actually ends the loop, by handing the call to
+          # FALLBACK_MODELS instead of replaying it. Raising the timeout without
+          # this would only make each doomed attempt longer.
+          CONFIG.AI_TIMEOUT: '300'
+          CONFIG.RETRY_SAME_MODEL_ON_TIMEOUT: 'false'

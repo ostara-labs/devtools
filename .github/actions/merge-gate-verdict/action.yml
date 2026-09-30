@@ -50,6 +50,17 @@ runs:
         # (CONFIG.PROPAGATE_TOOL_ERRORS). The exemption therefore passes the
         # gate without opening it.
         if [ "${REVIEW_RESULT}" != "success" ] && [ "${REVIEW_RESULT}" != "skipped" ]; then
+          # A cancelled review is a TIMEOUT, not a rejected one: the job hit
+          # ai-review.yml's timeout-minutes before PR-Agent returned a verdict.
+          # Both block the merge, but they call for opposite responses — a
+          # rejection means read the findings, a timeout means the review never
+          # ran and re-running it is the fix. Name which one this is, because
+          # the generic message sent a reader hunting through a review that did
+          # not exist.
+          if [ "${REVIEW_RESULT}" = "cancelled" ]; then
+            echo "::error::Condition 2 failed: the AI review was CANCELLED — it hit the job timeout before returning a verdict, so no findings exist to address. Re-run the review; if it times out again, check CONFIG.AI_TIMEOUT against the model's generation time."
+            exit 1
+          fi
           echo "::error::Condition 2 failed: AI review result is ${REVIEW_RESULT}"
           exit 1
         fi
