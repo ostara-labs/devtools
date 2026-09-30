@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.13.6](https://github.com/ostara-labs/devtools/compare/v1.13.5...v1.13.6) (2026-09-30)
+
+
+### Bug Fixes
+
+* **ai-review:** bound the same-model retry and raise the call timeout ([#78](https://github.com/ostara-labs/devtools/issues/78)) ([a43c0b0](https://github.com/ostara-labs/devtools/commit/a43c0b0b164a74f48af678e187bfcc6815caa845))
+
 ## [1.13.5](https://github.com/ostara-labs/devtools/compare/v1.13.4...v1.13.5) (2026-09-20)
 
 
