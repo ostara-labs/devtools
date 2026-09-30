@@ -183,12 +183,18 @@ search_issue() {
 issue_number="$(search_issue)"
 needs_attention=$((broken + action_needed))
 
+# `-F body=@file` reads the file's CONTENT; `-F body=file` sends the path
+# string itself. The first draft used the latter and opened an issue whose
+# entire body was a temp path — visible only by running it against the real
+# API, which is why this script is exercised before it ships.
+body_arg() { printf '%s' "@$BODY_FILE"; }
+
 if [ "$issue_number" = "" ]; then
   if [ "$needs_attention" -gt 0 ]; then
-    body_with_mention="$(cat "$BODY_FILE"; echo ""; echo "@Oloompa — $broken workflow(s) broken, $action_needed awaiting your approval.")"
+    printf '\n@Oloompa — %s workflow(s) broken, %s awaiting your approval.\n' "$broken" "$action_needed" >> "$BODY_FILE"
     gh api "repos/$SELF_REPO/issues" \
       -f title="$ISSUE_TITLE" \
-      -F body="$body_with_mention" >/dev/null
+      -F body="$(body_arg)" >/dev/null
     echo "opened health report (attention needed)"
   else
     echo "healthy: no report issue exists and none is needed"
@@ -199,17 +205,17 @@ fi
 current_state="$(gh api "repos/$SELF_REPO/issues/$issue_number" --jq '.state')"
 
 if [ "$needs_attention" -gt 0 ]; then
-  gh api -X PATCH "repos/$SELF_REPO/issues/$issue_number" -F body="$BODY_FILE" >/dev/null
+  gh api -X PATCH "repos/$SELF_REPO/issues/$issue_number" -F body="$(body_arg)" >/dev/null
   if [ "$current_state" = "closed" ]; then
     gh api -X PATCH "repos/$SELF_REPO/issues/$issue_number" -f state="open" >/dev/null
     gh api "repos/$SELF_REPO/issues/$issue_number/comments" \
       -f body="@Oloompa — $broken workflow(s) broken, $action_needed awaiting your approval. Reopening this report." >/dev/null
     echo "reopened health report and notified"
   else
-    echo "health report updated (still open, still $( [ "$broken" -gt 0 ] && echo broken || echo action))"
+    echo "health report updated (still open, still broken)"
   fi
 else
-  gh api -X PATCH "repos/$SELF_REPO/issues/$issue_number" -F body="$BODY_FILE" >/dev/null
+  gh api -X PATCH "repos/$SELF_REPO/issues/$issue_number" -F body="$(body_arg)" >/dev/null
   if [ "$current_state" = "open" ]; then
     gh api -X PATCH "repos/$SELF_REPO/issues/$issue_number" -f state="closed" >/dev/null
     echo "closed health report — everything nominal"
