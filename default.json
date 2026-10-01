@@ -1,6 +1,6 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:recommended"],
+  "extends": ["config:recommended", ":dependencyDashboard"],
   "git-submodules": {
     "enabled": true
   },
@@ -21,6 +21,24 @@
       "matchDepNames": ["/^ostara-labs\\/devtools\\//"],
       "automerge": true,
       "automergeType": "pr"
+    },
+    {
+      "description": "Routine language bumps (patch and minor) are grouped into one pull request per ecosystem, so a week's wave is a few PRs instead of dozens. This mirrors the grouping Dependabot was configured with, so the migration changes the engine and not the outcome.",
+      "matchManagers": ["cargo", "npm", "pip_requirements", "pep621", "poetry", "uv", "mix"],
+      "matchUpdateTypes": ["patch", "minor"],
+      "groupName": "{{manager}} patch and minor",
+      "automerge": true,
+      "automergeType": "pr"
+    },
+    {
+      "description": "Major updates are never automerged. Nothing in this org's CI can tell whether a semantic major is safe to take — that judgement is the human's, and trading a saved click for a silent breakage is the wrong trade.",
+      "matchManagers": ["cargo", "npm", "pip_requirements", "pep621", "poetry", "uv", "mix"],
+      "matchUpdateTypes": ["major"],
+      "automerge": false,
+      "addLabels": ["major-update"]
     }
-  ]
+  ],
+  "schedule": ["before 6am on monday"],
+  "prConcurrentLimit": 5,
+  "prHourlyLimit": 2
 }
