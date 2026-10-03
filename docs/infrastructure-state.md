@@ -64,7 +64,22 @@ wrap, PowerShell's continuation character is a backtick `` ` `` as the LAST
 character of the line, with nothing after it — never a backslash.
 
 ```powershell
-gcloud projects create ostara-labs-infra --name="ostara-labs infrastructure" --billing-account=017874-14B8A1-8EFD5D
+gcloud projects create ostara-labs-infra --name="ostara-labs infrastructure"
+```
+
+**Then link billing, as a separate step.** `gcloud projects create` does not
+accept a billing option at all — `--billing-account` is rejected with
+"unrecognized arguments", and the `--billing-project` it suggests is a
+different thing entirely. The account is attached with its own command:
+
+```powershell
+gcloud billing projects link ostara-labs-infra --billing-account=017874-14B8A1-8EFD5D
+```
+
+Verify the project exists before continuing:
+
+```powershell
+gcloud projects describe ostara-labs-infra
 ```
 
 Then the three pieces the deployment workflow expects:
