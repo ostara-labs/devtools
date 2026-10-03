@@ -36,12 +36,42 @@ Neither is a property anyone asked for.
 The rule of thumb: **an object lives in the state of the thing it governs.**
 The rulesets govern the organisation, so they get organisation-level state.
 
-## What must exist first
+## What exists
+
+Created on 2026-10-03. This is the state the deployment workflow expects:
+
+| Resource | Value |
+|---|---|
+| Project | `ostara-labs-infra` (number `418359433373`, ACTIVE, billed to `017874-14B8A1-8EFD5D`) |
+| State bucket | `gs://ostara-labs-rulesets-state`, `europe-west1`, uniform access |
+| KMS key | `projects/ostara-labs-infra/locations/europe-west1/keyRings/pulumi/cryptoKeys/pulumi-stack-encryption` |
+| Workload Identity pool | `github-actions` (global), provider `github` |
+| Service account | `github-actions-deployer@ostara-labs-infra.iam.gserviceaccount.com` |
+
+The service account holds `storage.admin`, `cloudkms.cryptoKeyEncrypterDecrypter`
+and `iam.serviceAccountTokenCreator`, and the pool is bound to it through
+`attribute.repository_owner/ostara-labs` — the same rule the bot project uses,
+so any repository in the org can assume it from Actions.
+
+### The two repository secrets
+
+```
+GCP_SERVICE_ACCOUNT_EMAIL
+  github-actions-deployer@ostara-labs-infra.iam.gserviceaccount.com
+
+GCP_WORKLOAD_IDENTITY_PROVIDER
+  projects/418359433373/locations/global/workloadIdentityPools/github-actions/providers/github
+```
+
+Plus the two the GitHub App needs: `DEVTOOLS_APP_ID` (variable) and
+`DEVTOOLS_APP_PRIVATE_KEY` (secret). The App requires **Organization →
+Administration: read and write**.
+
+## How it was created
 
 There is **no GCP organization** on this account — `gcloud organizations list`
-is empty, and the `ostara-labs` billing account has exactly one project,
-`ostara-labs-bot`. The state bucket therefore cannot be created until a project
-exists to hold it.
+is empty, and the `ostara-labs` billing account holds only `ostara-labs-bot`
+and now `ostara-labs-infra`.
 
 ### Step 0 — Create the infrastructure project
 
