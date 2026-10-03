@@ -1,0 +1,86 @@
+name: Renovate
+
+# Self-hosted Renovate — the org's single dependency-update engine.
+#
+# WHY SELF-HOSTED RATHER THAN THE MEND APP. The hosted app is free for public
+# repos and for the Renovate-only plan, so cost was not the deciding factor;
+# the deciding factor is that this org's policy already lives here, in
+# `default.json`, and running the engine here keeps configuration and
+# execution in one place. The app would add a third party reading all eleven
+# private repositories to run a policy this repo already owns.
+#
+# WHY IT REPLACES DEPENDABOT RATHER THAN SITTING BESIDE IT. Two bots updating
+# the same dependency produce competing PRs and two places to change a rule.
+# Renovate covers what Dependabot covered — github-actions and the git
+# submodule through the managers below, language ecosystems through
+# `default.json`. Removing Dependabot belongs to a separate change, ordered
+# after this workflow has produced PRs: dropping it first would leave repos
+# with no updater at all in the gap.
+#
+# WHY devtools IS HANDLED HERE AND NOT IN EACH CONSUMER. The `.devtools`
+# submodule and the `ostara-labs/devtools/*` workflow refs must move together:
+# a repo whose submodule is bumped while its workflow refs are not is in the
+# inconsistent state drift-scan exists to detect. Renovate groups them into
+# one PR; two separate Dependabot ecosystems could not.
+#
+# CADENCE. Monday 05:00 UTC, before the weekly drift-scan (05:23) so the scan
+# reports on a settled tree rather than a half-applied wave. `workflow_dispatch`
+# is kept so a run can be forced after an occasional devtools change.
+
+on:
+  schedule:
+    - cron: "0 5 * * 1"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: renovate
+  cancel-in-progress: false
+
+jobs:
+  renovate:
+    name: renovate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Mint App installation token
+        id: app-token
+        if: vars.DEVTOOLS_APP_ID != ''
+        # Same app as drift-scan. It needs Contents: write (branch and commit),
+        # Pull requests: write, and Issues: write (Renovate opens a
+        # dependency-dashboard issue). A mint failure falls through to the PAT
+        # below rather than killing the run.
+        continue-on-error: true
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ vars.DEVTOOLS_APP_ID }}
+          private-key: ${{ secrets.DEVTOOLS_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run Renovate over the organisation
+        uses: renovatebot/github-action@6d26fcf0275dc65624cbc3d51fe78bc773f98321 # v46.3.6
+        with:
+          # `default.json` in this repo is the org preset; every consumer
+          # extends `github>ostara-labs/devtools`. Pointing the engine at the
+          # org makes it apply that preset to all of them.
+          configurationFile: default.json
+          token: ${{ steps.app-token.outputs.token || secrets.ORG_AUDIT_TOKEN }}
+          # AUTODISCOVER walks every repo the token can see, which is what
+          # makes this a single org-wide runner instead of eleven callers.
+          # The major alone is the documented form: the action's own default is
+          # '44', so a bare major is what it expects, not a full semver.
+          renovate-version: "44"
+        env:
+          RENOVATE_AUTODISCOVER: "true"
+          RENOVATE_PLATFORM: "github"
+          # No RENOVATE_REPOSITORIES: setting it empty changes nothing (the
+          # autodiscover branch only consults it when it is non-empty) while
+          # reading as if it restricted the run to nothing.
+          LOG_LEVEL: "info"
