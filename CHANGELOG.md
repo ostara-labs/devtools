@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.14.0](https://github.com/ostara-labs/devtools/compare/v1.13.6...v1.14.0) (2026-10-03)
+
+
+### Features
+
+* **health:** one org status marker that notifies on transition ([#81](https://github.com/ostara-labs/devtools/issues/81)) ([06137d9](https://github.com/ostara-labs/devtools/commit/06137d971b9bde442a8bd06d6c55d294f5a65165))
+* **health:** run on push to main, on release, and keep the manual trigger ([#83](https://github.com/ostara-labs/devtools/issues/83)) ([ca22c53](https://github.com/ostara-labs/devtools/commit/ca22c5329a10efc380745523df94c9bfb2a225d2))
+* **renovate:** self-host the org dependency engine and give it a policy ([#84](https://github.com/ostara-labs/devtools/issues/84)) ([a497300](https://github.com/ostara-labs/devtools/commit/a497300f16eb79df15dcb8d5ff423c4812632c1a))
+* **rulesets:** activate the Pulumi program and declare the unmanaged rulesets ([#87](https://github.com/ostara-labs/devtools/issues/87)) ([8f0b67a](https://github.com/ostara-labs/devtools/commit/8f0b67ab45b44f1142dfd232044c5ecfaa4a9b4e))
+
+
+### Bug Fixes
+
+* **infra:** the deploy pointed its KMS at the bot project ([#90](https://github.com/ostara-labs/devtools/issues/90)) ([1945f3d](https://github.com/ostara-labs/devtools/commit/1945f3d3dfa235291b890cb177311277d443f1fd))
+* **rulesets:** Pulumi.yaml declared config keys with no value ([#88](https://github.com/ostara-labs/devtools/issues/88)) ([1825596](https://github.com/ostara-labs/devtools/commit/18255963c004026172fee9ed70099f344bd744be))
+* **rulesets:** reconcile the script and Pulumi onto one policy ([#86](https://github.com/ostara-labs/devtools/issues/86)) ([764966a](https://github.com/ostara-labs/devtools/commit/764966a673f78d49956f0bae71f87fde68d00420))
+
 ## [1.13.6](https://github.com/ostara-labs/devtools/compare/v1.13.5...v1.13.6) (2026-09-30)
 
 
