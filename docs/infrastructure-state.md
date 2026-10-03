@@ -45,9 +45,23 @@ exists to hold it.
 
 ### Step 0 — Create the infrastructure project
 
-Run these from **PowerShell on Windows**. One command per line: the `\`
-continuation is bash-only, and PowerShell rejects it with
-"Expression manquante après l'opérateur unaire".
+**PowerShell 5.1 does not accept `\` as a line continuation.** It passes the
+backslash through as a literal argument and then parses the next line as
+PowerShell code, so a multi-line command fails like this:
+
+```
+ERROR: (gcloud.projects.create) unrecognized arguments: \
+Au caractère Ligne:1 : 8
++      --name="ostara-labs infrastructure" \
++        ~
+Expression manquante après l'opérateur unaire « -- ».
+```
+
+Nothing is created when that happens — the argument never reaches gcloud.
+
+**Run each command on ONE line**, which is the form below. If a command must
+wrap, PowerShell's continuation character is a backtick `` ` `` as the LAST
+character of the line, with nothing after it — never a backslash.
 
 ```powershell
 gcloud projects create ostara-labs-infra --name="ostara-labs infrastructure" --billing-account=017874-14B8A1-8EFD5D
@@ -57,9 +71,13 @@ Then the three pieces the deployment workflow expects:
 
 ```powershell
 gcloud storage buckets create gs://ostara-labs-rulesets-state --project=ostara-labs-infra --location=europe-west1 --default-storage-class=STANDARD --uniform-bucket-level-access
+```
 
+```powershell
 gcloud kms keyrings create pulumi --location=europe-west1 --project=ostara-labs-infra
+```
 
+```powershell
 gcloud kms keys create pulumi-stack-encryption --keyring=pulumi --location=europe-west1 --project=ostara-labs-infra --purpose=encryption
 ```
 
