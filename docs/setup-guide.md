@@ -172,7 +172,7 @@ pulumi login
 
 If you use GCS backend (recommended for ostara-labs):
 ```powershell
-pulumi login gs://ostara-labs-pulumi-state
+pulumi login gs://agent-pulumi-state
 ```
 
 ### 3.3 — Create the stack
@@ -231,23 +231,33 @@ pulumi preview
 ```
 
 This shows what Pulumi will create without making changes. You should see:
-- 3 resources to create: `core-branch-protection`, `block-secrets-and-binaries`, `devtools-trust-boundary`
+- resources to create: `main-protection`, `required-ci-checks`,
+  `block-secrets-and-binaries`, and one `merge-queue` per repository in the list
 - No resources to delete or replace
 
 Review the plan. If it looks correct, proceed.
 
 ### 4.2 — Deploy
 
+Locally, once (the first time a stack is created):
+
 ```powershell
 pulumi up
 ```
+
+Afterwards the repo deploys itself: `.github/workflows/deploy-rulesets.yml`
+runs on every push to `main` that touches `infra/rulesets/**`, and on manual
+dispatch. It runs `pulumi preview` before `pulumi up`, so the plan of each
+deploy is in the run log. A manual `pulumi up` against the same stack is still
+fine, but prefer the workflow: it uses the same secrets for everyone and
+leaves a trace of what was applied.
 
 Pulumi asks for confirmation. Type `yes` to deploy.
 
 Expected result:
 ```
 Resources:
-    + 3 created
+    + N created
 
 Duration: 15s
 ```
@@ -255,10 +265,20 @@ Duration: 15s
 ### 4.3 — Verify on GitHub
 
 1. Go to: https://github.com/organizations/ostara-labs/settings/rules
-2. You should see 3 rulesets:
-   - `core-branch-protection` (branch, all repos)
-   - `block-secrets-and-binaries` (push, all repos)
-   - `devtools-trust-boundary` (branch, devtools repo only)
+2. You should see these rulesets:
+   - `main-protection` (branch, all repos)
+   - `required-ci-checks` (branch, all repos)
+   - `block-secrets-and-binaries` (push, all repos) — **only after this
+     program has been applied**; it has never existed, so until then no
+     server-side secret blocking is active
+   - `merge-queue` (branch) on `devtools` and `repo-template`
+   - `trust-boundary-human-review` on `devtools`
+   - `trust-boundary-codeowner-review` on `bot`
+
+   The live rulesets were created by `scripts/setup-org-rulesets.sh`, not by
+   this program, which is why `main-protection` and `required-ci-checks` match
+   the script's shape. That script and `infra/rulesets/index.ts` must declare
+   the same thing; check both before changing either.
 
 3. Click each one to verify the rules match the code in `index.ts`.
 
