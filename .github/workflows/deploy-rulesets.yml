@@ -100,8 +100,20 @@ jobs:
       - name: Configure GitHub App credentials
         working-directory: infra/rulesets
         env:
-          APP_ID: ${{ vars.DEVTOOLS_APP_ID }}
-          APP_PRIVATE_KEY: ${{ secrets.DEVTOOLS_APP_PRIVATE_KEY }}
+          # A DIFFERENT app from drift-scan's, and named differently on purpose.
+          # The drift-scan app holds Contents:read and Issues:write for a
+          # read-only weekly audit; this one needs Organization →
+          # Administration:read and write, which can rewrite the branch
+          # protection of every repository in the org. Sharing one credential
+          # would give a scanning app the power to remove the protections it
+          # reports on.
+          #
+          # The names are distinct because RULESETS_APP_ID and its key are what
+          # this workflow reads. Reusing DEVTOOLS_APP_ID here would silently
+          # repoint drift-scan, health-check and renovate at a different app,
+          # since all three read that same variable.
+          APP_ID: ${{ vars.RULESETS_APP_ID }}
+          APP_PRIVATE_KEY: ${{ secrets.RULESETS_APP_PRIVATE_KEY }}
           ORG_OWNER: ${{ github.repository_owner }}
         run: |
           # Set via env, never interpolated into the command string: a crafted

@@ -53,7 +53,9 @@ and `iam.serviceAccountTokenCreator`, and the pool is bound to it through
 `attribute.repository_owner/ostara-labs` — the same rule the bot project uses,
 so any repository in the org can assume it from Actions.
 
-### The two repository secrets
+### The four repository settings
+
+Two for GCP authentication:
 
 ```
 GCP_SERVICE_ACCOUNT_EMAIL
@@ -63,9 +65,30 @@ GCP_WORKLOAD_IDENTITY_PROVIDER
   projects/418359433373/locations/global/workloadIdentityPools/github-actions/providers/github
 ```
 
-Plus the two the GitHub App needs: `DEVTOOLS_APP_ID` (variable) and
-`DEVTOOLS_APP_PRIVATE_KEY` (secret). The App requires **Organization →
-Administration: read and write**.
+Two for the GitHub App that creates the rulesets:
+
+```
+Variable : RULESETS_APP_ID            = the app's ID
+Secret   : RULESETS_APP_PRIVATE_KEY   = the .pem contents
+```
+
+### Why a second app, and why different names
+
+`DEVTOOLS_APP_ID` / `DEVTOOLS_APP_PRIVATE_KEY` belong to `devtools-drift-scan`,
+which holds **Contents: read-only** and **Issues: read and write** for a weekly
+audit that only reads.
+
+The rulesets need **Organization → Administration: read and write**, which can
+rewrite the branch protection of every repository in the org. Giving that to
+the scanning app would let the app that *reports* on the protections *remove*
+them, which is the opposite of a safety property.
+
+So it is a separate app — and its settings are named differently on purpose.
+Three workflows already read `DEVTOOLS_APP_ID` (`drift-scan`, `health-check`,
+`renovate`); reusing that name for the new app's ID would silently repoint all
+three at a different credential, with no diff to review and no error to see.
+A distinct name means each app's key is unambiguous and the existing three keep
+the app they were written against.
 
 ## How it was created
 
