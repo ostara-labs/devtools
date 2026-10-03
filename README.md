@@ -171,3 +171,12 @@ Therefore:
 The devtools pins, the language ecosystems, what merges without a human, and
 what to check when a bump does not arrive: [`docs/dependency-updates.md`](docs/dependency-updates.md).
 
+## Infrastructure state
+
+Where this repository's Pulumi state lives, and why it is not in the bot
+project: [`docs/infrastructure-state.md`](docs/infrastructure-state.md).
+
+`infra/rulesets/` creates the GitHub rulesets that govern every repository
+here. Its state is separate from the bot project's because an object belongs
+in the state of the thing it governs — the rulesets govern the organisation,
+not one of its consumers.
