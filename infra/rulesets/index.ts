@@ -170,6 +170,22 @@ const mergeQueues = mergeQueueRepos.map(
 // NOT ACTIVE ANYWHERE TODAY: every live ruleset in this org is target=branch,
 // so this one does not exist on GitHub. It is declared, and applying it is a
 // deliberate step — see docs/setup-guide.md.
+//
+// READ THE PREVIEW BEFORE THE FIRST APPLY. This one changes behaviour the most:
+// it goes from not existing to blocking pushes across every repository at once.
+//
+// There is no soft rollout available. `enforcement: evaluate` would log
+// violations without blocking, but GitHub documents it as Enterprise-only
+// ("evaluate is only available with GitHub Enterprise") and this org is on the
+// Team plan, so the option is not merely unused here — it would fail the
+// deployment.
+//
+// What makes the jump smaller than it looks: every repository already runs
+// gitleaks in `ci / gate` and in the pre-commit hook, so a commit carrying a
+// .env or a .pem is refused before it reaches a push. This ruleset is the
+// server-side backstop for the case where hooks are bypassed with
+// --no-verify, which is why it is worth having despite the absence of a
+// rehearsal mode.
 const pushProtection = new github.OrganizationRuleset("block-secrets-and-binaries", {
     name: "block-secrets-and-binaries",
     target: "push",
