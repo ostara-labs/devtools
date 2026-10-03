@@ -1,0 +1,113 @@
+name: Deploy Rulesets
+
+# Pulumi deployment for the org rulesets — server-side enforcement that no
+# repository can bypass, including org admins.
+#
+# WHY THIS EXISTS. The Pulumi program in infra/rulesets/ had never been applied:
+# no stack existed in the backend, Pulumi.dev.yaml (which `pulumi stack init`
+# creates) was absent, and no workflow ran `pulumi up`. While it described a
+# policy, scripts/setup-org-rulesets.sh quietly applied a different one by hand.
+# This workflow is what makes the declaration authoritative.
+#
+# ORDER MATTERS: the rulesets a repository depends on must exist before the
+# declared shape is applied, or the plan shows creations that fight the live
+# state. The stack is selected (never recreated) below, and a preview runs
+# before the update so the plan is in the log for every deploy.
+#
+# Trust boundary: .github/workflows/ is trust-boundary in this repo, and the
+# rulesets themselves govern every repository — so a change to this file or to
+# infra/rulesets/ needs human review before merge.
+#
+# Required GitHub secrets (same as the bot repo's infra deploy):
+#   GCP_WORKLOAD_IDENTITY_PROVIDER — WIF pool provider resource name
+#   GCP_SERVICE_ACCOUNT_EMAIL      — builder SA email
+#
+# Pulumi backend: gs://agent-pulumi-state (the bucket that exists; the setup
+# guide's gs://ostara-labs-pulumi-state was never created)
+# Pulumi secrets: GCP KMS key pulumi-stack-encryption
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "infra/rulesets/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  GCP_PROJECT: ostara-labs-bot
+  GCP_REGION: europe-west1
+  PULUMI_BACKEND: gs://agent-pulumi-state
+  PULUMI_KMS_KEY: gcpkms://projects/ostara-labs-bot/locations/europe-west1/keyRings/pulumi/cryptoKeys/pulumi-stack-encryption
+  STACK: devtools-rulesets
+
+jobs:
+  pulumi-up:
+    name: Pulumi preview and up
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Authenticate to GCP
+        id: auth
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3
+
+      - name: Install Pulumi
+        uses: pulumi/actions@8e5e406f4007fca908480587cb9893c07090f58d # v7
+        with:
+          pulumi-version: latest
+
+      - name: Configure Pulumi backend
+        run: pulumi login "$PULUMI_BACKEND"
+
+      - name: Install npm dependencies
+        working-directory: infra/rulesets
+        run: npm install
+
+      - name: Select or create the stack
+        working-directory: infra/rulesets
+        run: |
+          # A stale lock from an interrupted run would block every later deploy,
+          # so cancel first and tolerate its absence.
+          if pulumi stack select "$STACK" 2>/dev/null; then
+            pulumi cancel --yes 2>/dev/null || true
+            echo "Stack $STACK exists — using it"
+          else
+            echo "Stack $STACK does not exist — creating with KMS"
+            pulumi stack init "$STACK" --secrets-provider="$PULUMI_KMS_KEY"
+          fi
+
+      - name: Configure GitHub App credentials
+        working-directory: infra/rulesets
+        env:
+          APP_ID: ${{ vars.DEVTOOLS_APP_ID }}
+          APP_PRIVATE_KEY: ${{ secrets.DEVTOOLS_APP_PRIVATE_KEY }}
+          ORG_OWNER: ${{ github.repository_owner }}
+        run: |
+          # Set via env, never interpolated into the command string: a crafted
+          # secret value must not be able to inject shell commands.
+          pulumi config set github:appAuth.id "$APP_ID" --secret
+          pulumi config set github:appAuth.pemFile "$APP_PRIVATE_KEY" --secret
+          pulumi config set github:owner "$ORG_OWNER"
+
+      - name: Preview
+        working-directory: infra/rulesets
+        run: pulumi preview --stack "$STACK" --non-interactive --diff
+
+      - name: Apply
+        working-directory: infra/rulesets
+        run: pulumi up --stack "$STACK" --non-interactive --yes --skip-preview
