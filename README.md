@@ -17,6 +17,11 @@ Shared git hooks, Makefiles, ONE aggregate CI workflow, lint configs, drift-scan
 | `workflows/ci.yml` | THE org aggregate CI: one caller line per repo, seven required contexts, language jobs auto-detect + succeed vacuously when a stack is absent. Pinned by digest, bumped per release. | `uses: ostara-labs/devtools/.github/workflows/ci.yml@<digest> # vX.Y.Z` |
 | `workflows/drift-scan.yml` | Weekly conformance audit of every org repo (submodule gitlink + workflow refs vs latest release); red run + rolling tracking issue on drift. GitHub App auth (preferred) or `ORG_AUDIT_TOKEN` PAT — see [Drift-scan setup](#drift-scan-setup). | Org-level scheduled workflow |
 | `default.json` | Org Renovate preset: git-submodules + github-actions managers, automerge scoped to `.devtools` submodule and `ostara-labs/devtools/*` refs. | `extends ["github>ostara-labs/devtools"]` in `renovate.json` |
+| `workflows/health-check.yml` | One issue in this repo says whether the shared tooling works: closed while everything is nominal, reopened with an `@`-mention when something breaks. Reads the last run of each monitored workflow per repo, never a failure count. | Org-level scheduled workflow (daily) — see [Health check](docs/health-check.md) |
+| `workflows/renovate.yml` | Self-hosted Renovate: the org's single dependency-update engine, covering the devtools pins and the language ecosystems. | Org-level scheduled workflow (weekly) — see [Dependency updates](docs/dependency-updates.md) |
+| `workflows/deploy-rulesets.yml` | Applies `infra/rulesets/` through Pulumi: the branch, push and merge-queue rulesets that govern every repo. | Runs on push to `main` under `infra/rulesets/**` — see [Infrastructure state](docs/infrastructure-state.md) |
+| `workflows/pr-pipeline.yml` | The PR chain every consumer calls: `ci` → `ai-review` → `merge-gate`. `merge-gate` is what actually blocks a merge. | One-line caller per repo, same as `ci.yml` |
+| `workflows/security.yml` | Secret and vulnerability scanning at the org level. | Org-level scheduled workflow |
 | `configs/` | Shared lint configs: clippy.toml, rustfmt.toml, biome.json, plus seeded `.gitleaks.toml` and `.coderabbit.yaml` via `install.sh` | Symlink or copy into repo root |
 | `scripts/install.sh` | Bootstrap: sets the RELATIVE hooksPath, creates the Makefile stub, seeds configs | `bash .devtools/scripts/install.sh` from submodule |
 
@@ -180,3 +185,27 @@ project: [`docs/infrastructure-state.md`](docs/infrastructure-state.md).
 here. Its state is separate from the bot project's because an object belongs
 in the state of the thing it governs — the rulesets govern the organisation,
 not one of its consumers.
+
+## Health check
+
+One issue in this repository says whether the shared tooling works. It is
+closed while everything is nominal and reopened with an `@`-mention when
+something breaks, so silence means healthy: [`docs/health-check.md`](docs/health-check.md).
+
+It reads the **last run of each monitored workflow, per repository** — never a
+failure count, because one dead cron repeating every fifteen minutes reads as
+166 problems where the real number is one. Four outcomes are distinguished:
+BROKEN, ACTION (awaiting your approval), INFO (an expected failure), and GAP
+(the repo does not carry that capability).
+
+## Documentation index
+
+| Document | Owns |
+|---|---|
+| [`docs/ai-review.md`](docs/ai-review.md) | How a PR is reviewed, and what blocks a merge |
+| [`docs/codeowners-trust-boundary.md`](docs/codeowners-trust-boundary.md) | The path-based human-review pattern |
+| [`docs/dependency-updates.md`](docs/dependency-updates.md) | How dependency updates reach consumers |
+| [`docs/health-check.md`](docs/health-check.md) | The org status marker and its four states |
+| [`docs/infrastructure-state.md`](docs/infrastructure-state.md) | Where the rulesets' Pulumi state lives |
+| [`docs/setup-guide.md`](docs/setup-guide.md) | The one-time setup, start to finish |
+| [`docs/TOOLCHAIN.md`](docs/TOOLCHAIN.md) | The Rust toolchain pin and its escape hatch |
