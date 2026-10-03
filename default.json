@@ -16,9 +16,9 @@
       "automergeType": "pr"
     },
     {
-      "description": "devtools workflow digest bumps: automerge — same trust model. The trailing slash in the matcher excludes lookalike repos (devtools-fork).",
+      "description": "devtools workflow and action digest bumps: automerge — same trust model. The matcher is the exact owner/repo, because that is the whole of a github-actions depName: Renovate builds it as `${owner}/${repo}` and keeps the sub-path in a separate field, so the name is `ostara-labs/devtools` whether the reference points at a reusable workflow or a composite action. A trailing slash matches nothing and would disable this rule silently; an unanchored `devtools` would also catch a lookalike such as `ostara-labs/devtools-fork`.",
       "matchManagers": ["github-actions"],
-      "matchDepNames": ["/^ostara-labs\\/devtools\\//"],
+      "matchDepNames": ["/^ostara-labs\\/devtools$/"],
       "automerge": true,
       "automergeType": "pr"
     },
