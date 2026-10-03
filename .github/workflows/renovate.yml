@@ -74,9 +74,13 @@ jobs:
           token: ${{ steps.app-token.outputs.token || secrets.ORG_AUDIT_TOKEN }}
           # AUTODISCOVER walks every repo the token can see, which is what
           # makes this a single org-wide runner instead of eleven callers.
-          renovate-version: "42"
+          # The major alone is the documented form: the action's own default is
+          # '44', so a bare major is what it expects, not a full semver.
+          renovate-version: "44"
         env:
           RENOVATE_AUTODISCOVER: "true"
           RENOVATE_PLATFORM: "github"
-          RENOVATE_REPOSITORIES: ""
+          # No RENOVATE_REPOSITORIES: setting it empty changes nothing (the
+          # autodiscover branch only consults it when it is non-empty) while
+          # reading as if it restricted the run to nothing.
           LOG_LEVEL: "info"
