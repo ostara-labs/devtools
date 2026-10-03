@@ -45,25 +45,30 @@ exists to hold it.
 
 ### Step 0 — Create the infrastructure project
 
-```bash
-gcloud projects create ostara-labs-infra \
-  --name="ostara-labs infrastructure" \
-  --billing-account=017874-14B8A1-8EFD5D
+Run these from **PowerShell on Windows**. One command per line: the `\`
+continuation is bash-only, and PowerShell rejects it with
+"Expression manquante après l'opérateur unaire".
+
+```powershell
+gcloud projects create ostara-labs-infra --name="ostara-labs infrastructure" --billing-account=017874-14B8A1-8EFD5D
 ```
 
 Then the three pieces the deployment workflow expects:
 
-```bash
-gcloud storage buckets create gs://ostara-labs-rulesets-state \
-  --project=ostara-labs-infra \
-  --location=europe-west1 \
-  --default-storage-class=STANDARD \
-  --uniform-bucket-level-access
+```powershell
+gcloud storage buckets create gs://ostara-labs-rulesets-state --project=ostara-labs-infra --location=europe-west1 --default-storage-class=STANDARD --uniform-bucket-level-access
 
 gcloud kms keyrings create pulumi --location=europe-west1 --project=ostara-labs-infra
-gcloud kms keys create pulumi-stack-encryption \
-  --keyring=pulumi --location=europe-west1 --project=ostara-labs-infra \
-  --purpose=encryption
+
+gcloud kms keys create pulumi-stack-encryption --keyring=pulumi --location=europe-west1 --project=ostara-labs-infra --purpose=encryption
+```
+
+The same commands in bash, if you are on Linux or macOS:
+
+```bash
+gcloud projects create ostara-labs-infra \
+  --name="ostara-labs infrastructure" \
+  --billing-account=017874-14B8A1-8EFD5D
 ```
 
 And a Workload Identity Federation pool so CI authenticates without a key —
