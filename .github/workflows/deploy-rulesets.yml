@@ -44,10 +44,16 @@ permissions:
   id-token: write
 
 env:
-  GCP_PROJECT: ostara-labs-bot
+  # The org infrastructure project, NOT ostara-labs-bot. The rulesets' state
+  # bucket and KMS key live there deliberately: a policy governing all eleven
+  # repositories should not sit inside the GCP project of one of them. Copying
+  # this workflow from the bot repo's infra deploy left these pointing at the
+  # bot project, and the first apply failed on
+  # "cloudkms.cryptoKeyVersions.useToEncrypt denied on projects/ostara-labs-bot".
+  GCP_PROJECT: ostara-labs-infra
   GCP_REGION: europe-west1
   PULUMI_BACKEND: gs://ostara-labs-rulesets-state
-  PULUMI_KMS_KEY: gcpkms://projects/ostara-labs-bot/locations/europe-west1/keyRings/pulumi/cryptoKeys/pulumi-stack-encryption
+  PULUMI_KMS_KEY: gcpkms://projects/ostara-labs-infra/locations/europe-west1/keyRings/pulumi/cryptoKeys/pulumi-stack-encryption
   STACK: devtools-rulesets
 
 jobs:
