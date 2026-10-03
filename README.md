@@ -165,3 +165,9 @@ Therefore:
 - The GitHub org ruleset MUST enforce this (see `workflows/trust-boundary-protect.yml`).
 - The agent MUST NOT auto-merge PRs to this repo.
 - The path-based enforcement pattern (CODEOWNERS + ruleset) is documented in [`docs/codeowners-trust-boundary.md`](docs/codeowners-trust-boundary.md).
+
+## Dependency updates
+
+The devtools pins, the language ecosystems, what merges without a human, and
+what to check when a bump does not arrive: [`docs/dependency-updates.md`](docs/dependency-updates.md).
+
