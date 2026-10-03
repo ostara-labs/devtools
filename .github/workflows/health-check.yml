@@ -13,10 +13,26 @@ name: Org Health Check
 # Same auth chain as drift-scan: App installation token preferred, PAT
 # fallback. Issue writes use the built-in token, which carries issues: write
 # on this repository.
+#
+# WHY FOUR TRIGGERS AND NOT ONE. A manual dispatch works, but it depends on
+# someone remembering to press it after landing a devtools change — the same
+# reliance on memory that let issue #33 go unread for 26 days. The event
+# triggers remove that step; the schedule stays as the safety net.
+#
+#   push:main      a devtools change landed — is devtools itself still sound?
+#   release        a tag was cut — did the ten consumers follow the bump?
+#   schedule       the net: a third-party cron can die without any commit
+#                  arriving, which is exactly how deploy-catchup stayed broken
+#                  for eleven days with nothing to notice it
+#   dispatch       force a run by hand after an occasional devtools change
 
 on:
   schedule:
     - cron: "0 6 * * *"
+  push:
+    branches: [main]
+  release:
+    types: [published]
   workflow_dispatch: {}
 
 permissions:
