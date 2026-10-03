@@ -156,6 +156,11 @@ Write down both numbers — you need them in Step 3.
 
 ## Step 3 — Configure Pulumi
 
+> The backend, the bucket and the GCP project they need are described in
+> [`infrastructure-state.md`](infrastructure-state.md). The bucket does **not**
+> exist yet — there is no GCP organization on this account, so the project has
+> to be created first. That document has the commands.
+
 ### 3.1 — Install npm dependencies
 
 ```powershell
@@ -172,7 +177,7 @@ pulumi login
 
 If you use GCS backend (recommended for ostara-labs):
 ```powershell
-pulumi login gs://agent-pulumi-state
+pulumi login gs://ostara-labs-rulesets-state
 ```
 
 ### 3.3 — Create the stack

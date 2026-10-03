@@ -22,9 +22,15 @@ name: Deploy Rulesets
 #   GCP_WORKLOAD_IDENTITY_PROVIDER — WIF pool provider resource name
 #   GCP_SERVICE_ACCOUNT_EMAIL      — builder SA email
 #
-# Pulumi backend: gs://agent-pulumi-state (the bucket that exists; the setup
-# guide's gs://ostara-labs-pulumi-state was never created)
-# Pulumi secrets: GCP KMS key pulumi-stack-encryption
+# Pulumi backend: gs://ostara-labs-rulesets-state, a bucket in the org-level GCP
+# project this plan owns. It is deliberately NOT gs://agent-pulumi-state: that
+# bucket belongs to the bot project and holds the bot-infra stack, and a policy
+# governing all eleven repositories should not live inside the project of one
+# of its consumers.
+#
+# The project and bucket must exist before this workflow can run — see
+# docs/setup-guide.md, "Step 0 — Create the org infrastructure project".
+# Pulumi secrets: GCP KMS key pulumi-stack-encryption in that same project.
 
 on:
   push:
@@ -40,7 +46,7 @@ permissions:
 env:
   GCP_PROJECT: ostara-labs-bot
   GCP_REGION: europe-west1
-  PULUMI_BACKEND: gs://agent-pulumi-state
+  PULUMI_BACKEND: gs://ostara-labs-rulesets-state
   PULUMI_KMS_KEY: gcpkms://projects/ostara-labs-bot/locations/europe-west1/keyRings/pulumi/cryptoKeys/pulumi-stack-encryption
   STACK: devtools-rulesets
 
