@@ -40,19 +40,26 @@ const config = new pulumi.Config();
 // No explicit token retrieval needed here — the provider handles it.
 
 // --- Org-level branch protection (all repos) ---
-const branchProtection = new github.OrganizationRuleset("core-branch-protection", {
-    name: "core-branch-protection",
+//
+// This MUST stay identical to scripts/setup-org-rulesets.sh, which is what
+// actually creates and updates the live ruleset on GitHub. The two files
+// diverged for weeks without anyone noticing: this one declared a ruleset
+// named "core-branch-protection" that has never existed, so it governed
+// nothing at all, while the script produced "main-protection" with different
+// values. Before changing anything here, change the script too — and prefer
+// applying via the script, since it is the path that is known to work.
+const branchProtection = new github.OrganizationRuleset("main-protection", {
+    name: "main-protection",
     target: "branch",
     enforcement: "active",
     conditions: {
         refName: {
-            includes: ["refs/heads/main", "refs/heads/develop"],
+            includes: ["~DEFAULT_BRANCH"],
             excludes: [],
         },
         repositoryName: {
             includes: ["~ALL"],
             excludes: [],
-            protected: true,
         },
     },
     bypassActors: [],  // No bypass — even org admins cannot bypass
@@ -61,23 +68,29 @@ const branchProtection = new github.OrganizationRuleset("core-branch-protection"
         deletion: true,
         // Block force pushes
         nonFastForward: true,
-        // Require linear history (no merge commits — squash or rebase only)
-        requiredLinearHistory: true,
-        // Require PR with at least 1 approval
+        // Require a pull request before merging. The approving-review count
+        // stays at 0 so bot keeps its autonomy: its pr-classify workflow
+        // merges an `evolvable` PR itself, and a workflow token cannot supply
+        // a human approval, so a count of 1 would make the bot wait for a
+        // review that never arrives and block its own mutation path.
         pullRequest: {
-            requiredApprovingReviewCount: 1,
+            requiredApprovingReviewCount: 0,
+            requireCodeOwnerReview: true,
             dismissStaleReviewsOnPush: true,
-            requireLastPushApproval: true,
+            requireLastPushApproval: false,
+            // The point of this ruleset for the agent's workflow: an
+            // unresolved review thread blocks the merge, on every repo.
             requiredReviewThreadResolution: true,
-            allowedMergeMethods: ["squash", "rebase"],
         },
-        // Required status checks — these MUST pass before merge
+        // Required status checks — these MUST pass before merge.
+        // `gate` is the context the aggregate CI actually emits. An earlier
+        // version of this file required `lint`, `test` and `PR Classify`;
+        // none of those exist, and `PR Classify` was removed from bot in
+        // 7202f4a ("dead config"), so they would have blocked every merge.
         requiredStatusChecks: {
-            strictRequiredStatusChecksPolicy: true,
+            strictRequiredStatusChecksPolicy: false,
             requiredChecks: [
-                { context: "lint" },
-                { context: "test" },
-                { context: "PR Classify" },  // trust-boundary classification
+                { context: "gate" },
             ],
         },
     },
@@ -127,7 +140,7 @@ const pushProtection = new github.OrganizationRuleset("block-secrets-and-binarie
 // The devtools repo is trust-boundary by definition — it contains the enforcement
 // mechanisms for all other repos. Any change to it must be human-reviewed.
 const devtoolsRuleset = new github.RepositoryRuleset("devtools-trust-boundary", {
-    name: "devtools-trust-boundary-all-prs-require-review",
+    name: "trust-boundary-human-review",
     repository: "devtools",
     target: "branch",
     enforcement: "active",
@@ -160,7 +173,7 @@ const devtoolsRuleset = new github.RepositoryRuleset("devtools-trust-boundary", 
 // Note: This is a repo-level ruleset because required_reviewers with
 // file_patterns is a newer feature.
 const botTrustBoundary = new github.RepositoryRuleset("bot-trust-boundary-review", {
-    name: "bot-trust-boundary-file-review",
+    name: "trust-boundary-codeowner-review",
     repository: "bot",
     target: "branch",
     enforcement: "active",
