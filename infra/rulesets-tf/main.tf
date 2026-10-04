@@ -137,12 +137,17 @@ resource "github_organization_ruleset" "block_secrets_and_binaries" {
   }
 
   rules {
+    # `**/` on every entry that should match at any depth. A bare `.env`
+    # matches the repository root only, so a `.env` under a service directory
+    # would be pushed; `**/.env` covers both. The same reasoning applies to the
+    # key and credential patterns, which previously relied on a wildcard whose
+    # depth was never stated.
     file_path_restriction {
       restricted_file_paths = [
-        ".env",
-        "*.pem",
-        "*.key",
-        "credentials*",
+        "**/.env",
+        "**/*.pem",
+        "**/*.key",
+        "**/credentials*",
         "**/secrets/**",
       ]
     }
