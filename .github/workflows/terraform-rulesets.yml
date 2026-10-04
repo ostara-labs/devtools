@@ -1,0 +1,110 @@
+name: Terraform Rulesets
+
+# Plans and applies infra/rulesets-tf/, which declares the same three ORG
+# rulesets scripts/setup-org-rulesets.sh applies, but with a state.
+#
+# WHY BOTH EXIST, AND WHICH ONE OWNS WHAT.
+# The script answers "make the rulesets match this declaration" and converges
+# every time. It cannot answer "what would change" or "has someone edited a
+# ruleset by hand". Terraform answers both, at the cost of a state file — which
+# is the whole reason the Pulumi program that used to live here never worked:
+# its credentials sat in the state as `--secret` values, so every apply needed
+# a KMS, and on a GCS backend with a gcpkms provider that combination is broken
+# upstream (pulumi/pulumi#11591, open since 2022-12-08, unassigned).
+#
+# This program has no such dependency: the github provider reads its App
+# credentials from the ENVIRONMENT, so nothing secret enters the state and
+# there is nothing to decrypt. The state is unencrypted on purpose.
+#
+# Ownership today: the SCRIPT is authoritative, because it has run in
+# production and this has not. Terraform starts in plan-only mode — a plan on
+# every push, an apply only when someone dispatches it — so the two can be
+# compared before the switch.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "infra/rulesets-tf/**"
+  pull_request:
+    paths:
+      - "infra/rulesets-tf/**"
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Apply the plan instead of only planning it"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: terraform-rulesets
+  cancel-in-progress: false
+
+env:
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+
+jobs:
+  plan:
+    name: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Mint App installation token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ vars.RULESETS_APP_ID }}
+          private-key: ${{ secrets.RULESETS_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+        with:
+          terraform_version: "1.9.8"
+
+      - name: Terraform init
+        working-directory: infra/rulesets-tf
+        run: terraform init -no-color
+
+      - name: Terraform validate
+        working-directory: infra/rulesets-tf
+        run: terraform validate -no-color
+
+      - name: Terraform plan
+        working-directory: infra/rulesets-tf
+        env:
+          # The github provider reads these directly, so no credential is ever
+          # written into the configuration or the state.
+          GITHUB_APP_ID: ${{ vars.RULESETS_APP_ID }}
+          GITHUB_APP_INSTALLATION_ID: ${{ vars.RULESETS_APP_INSTALLATION_ID }}
+          GITHUB_APP_PEM_FILE: ${{ secrets.RULESETS_APP_PRIVATE_KEY }}
+        run: |
+          terraform plan -no-color -out=tfplan
+          echo ""
+          echo "=== a plan is not an apply ==="
+          echo "dispatch this workflow with apply=true to make the change"
+
+      - name: Terraform apply
+        if: ${{ inputs.apply == true }}
+        working-directory: infra/rulesets-tf
+        env:
+          GITHUB_APP_ID: ${{ vars.RULESETS_APP_ID }}
+          GITHUB_APP_INSTALLATION_ID: ${{ vars.RULESETS_APP_INSTALLATION_ID }}
+          GITHUB_APP_PEM_FILE: ${{ secrets.RULESETS_APP_PRIVATE_KEY }}
+        run: terraform apply -no-color -auto-approve tfplan
