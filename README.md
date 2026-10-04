@@ -22,6 +22,8 @@ Shared git hooks, Makefiles, ONE aggregate CI workflow, lint configs, drift-scan
 | `workflows/deploy-rulesets.yml` | Applies `infra/rulesets/` through Pulumi: the branch, push and merge-queue rulesets that govern every repo. | Runs on push to `main` under `infra/rulesets/**` — see [Infrastructure state](docs/infrastructure-state.md) |
 | `workflows/pr-pipeline.yml` | The PR chain every consumer calls: `ci` → `ai-review` → `merge-gate`. `merge-gate` is what actually blocks a merge. | One-line caller per repo, same as `ci.yml` |
 | `workflows/security.yml` | Secret and vulnerability scanning at the org level. | Org-level scheduled workflow |
+| `workflows/apply-org-rulesets.yml` | Applies the org rulesets through the script, under a short-lived App installation token. Ran on the script or `infra/rulesets/**` changing. See [Infrastructure state](docs/infrastructure-state.md). | Push to `main`, manual dispatch |
+| `workflows/terraform-rulesets.yml` | Plans `infra/rulesets-tf/` on every change and applies only on dispatch, so a plan can be compared before anything switches. State in GCS, unencrypted — the App credentials come from the environment. | Push / PR on `infra/rulesets-tf/**`, manual dispatch |
 | `configs/` | Shared lint configs: clippy.toml, rustfmt.toml, biome.json, plus seeded `.gitleaks.toml` and `.coderabbit.yaml` via `install.sh` | Symlink or copy into repo root |
 | `scripts/install.sh` | Bootstrap: sets the RELATIVE hooksPath, creates the Makefile stub, seeds configs | `bash .devtools/scripts/install.sh` from submodule |
 
@@ -206,6 +208,6 @@ BROKEN, ACTION (awaiting your approval), INFO (an expected failure), and GAP
 | [`docs/codeowners-trust-boundary.md`](docs/codeowners-trust-boundary.md) | The path-based human-review pattern |
 | [`docs/dependency-updates.md`](docs/dependency-updates.md) | How dependency updates reach consumers |
 | [`docs/health-check.md`](docs/health-check.md) | The org status marker and its four states |
-| [`docs/infrastructure-state.md`](docs/infrastructure-state.md) | Where the rulesets' Pulumi state lives |
+| [`docs/infrastructure-state.md`](docs/infrastructure-state.md) | Where the rulesets' state lives, what applies them, and why Pulumi does not |
 | [`docs/setup-guide.md`](docs/setup-guide.md) | The one-time setup, start to finish |
 | [`docs/TOOLCHAIN.md`](docs/TOOLCHAIN.md) | The Rust toolchain pin and its escape hatch |
