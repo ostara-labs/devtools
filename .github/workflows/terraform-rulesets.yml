@@ -90,6 +90,37 @@ jobs:
         working-directory: infra/rulesets-tf
         run: terraform validate -no-color
 
+      - name: Adopt the rulesets that already exist
+        working-directory: infra/rulesets-tf
+        env:
+          GITHUB_APP_ID: ${{ vars.RULESETS_APP_ID }}
+          GITHUB_APP_INSTALLATION_ID: ${{ vars.RULESETS_APP_INSTALLATION_ID }}
+          GITHUB_APP_PEM_FILE: ${{ secrets.RULESETS_APP_PRIVATE_KEY }}
+        run: |
+          # The three rulesets are LIVE — scripts/setup-org-rulesets.sh created
+          # them and it stays authoritative until this program has proven it
+          # declares the same thing. Without an import, `plan` reports
+          # "3 to add" and an apply would try to recreate objects that already
+          # exist.
+          #
+          # `terraform import` is idempotent here: re-importing an address
+          # already in the state is a no-op, so this stays correct on every
+          # run rather than only the first.
+          declare -A RULESETS=(
+            [github_organization_ruleset.main_protection]=21254080
+            [github_organization_ruleset.required_ci_checks]=23150888
+            [github_organization_ruleset.block_secrets_and_binaries]=24470458
+          )
+          for address in "${!RULESETS[@]}"; do
+            id="${RULESETS[$address]}"
+            if terraform state show "$address" >/dev/null 2>&1; then
+              echo "already tracked: $address"
+              continue
+            fi
+            echo "adopting $address (id=$id)"
+            terraform import -no-color "$address" "$id"
+          done
+
       - name: Terraform plan
         working-directory: infra/rulesets-tf
         env:
