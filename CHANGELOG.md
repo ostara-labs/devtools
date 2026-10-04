@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.15.0](https://github.com/ostara-labs/devtools/compare/v1.14.0...v1.15.0) (2026-10-04)
+
+
+### Features
+
+* **rulesets:** cover the three org rulesets, not just main-protection ([#102](https://github.com/ostara-labs/devtools/issues/102)) ([90fee0d](https://github.com/ostara-labs/devtools/commit/90fee0df823ad627d4e5f01dbb1ece0b22208570))
+* **rulesets:** declare the org rulesets in Terraform, with a state ([#103](https://github.com/ostara-labs/devtools/issues/103)) ([2da9c13](https://github.com/ostara-labs/devtools/commit/2da9c13740e101e0c55ca220670bec4f433c3194))
+
+
+### Bug Fixes
+
+* **infra:** build appAuth as an object, and pass the missing installationId ([#99](https://github.com/ostara-labs/devtools/issues/99)) ([3012fc8](https://github.com/ostara-labs/devtools/commit/3012fc8371958d7a63e653deb05f172535c182b4))
+* **infra:** keep the probe stack from being orphaned when init fails ([#98](https://github.com/ostara-labs/devtools/issues/98)) ([a7cc951](https://github.com/ostara-labs/devtools/commit/a7cc951318025005d7c82867f1b2a6d154f71c3e))
+* **infra:** pin the Pulumi CLI instead of tracking latest ([#100](https://github.com/ostara-labs/devtools/issues/100)) ([dddeb20](https://github.com/ostara-labs/devtools/commit/dddeb20ddc84cb38f3cac62189b612d09f9dfd48))
+* **infra:** pipe the App key to Pulumi instead of passing it as an argument ([#92](https://github.com/ostara-labs/devtools/issues/92)) ([b0406e6](https://github.com/ostara-labs/devtools/commit/b0406e6011ddea2cc8467201b477f0ed0f80f5ef))
+* **infra:** stop the diagnostic printing secrets and masking failures ([#95](https://github.com/ostara-labs/devtools/issues/95)) ([d12102a](https://github.com/ostara-labs/devtools/commit/d12102a0b52e3580dddb31b808a0c1a1a8d49d6a))
+* **infra:** use the real auth action pin so the diagnostic can start ([#96](https://github.com/ostara-labs/devtools/issues/96)) ([bc9bc4e](https://github.com/ostara-labs/devtools/commit/bc9bc4e5f009fc2c034b082a9b574e5bee77d042))
+
 ## [1.14.0](https://github.com/ostara-labs/devtools/compare/v1.13.6...v1.14.0) (2026-10-03)
 
 
