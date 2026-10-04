@@ -123,6 +123,9 @@ JSON
 # gitleaks the hooks run locally, and unlike them it cannot be bypassed with
 # --no-verify. It has never existed on GitHub — the Pulumi program declared it
 # and never applied.
+#
+# max_file_size is in MEGABYTES despite the name, and the API's valid range is
+# 1-100. A byte count such as 52428800 is out of range and blocks nothing.
 BLOCK_SECRETS_AND_BINARIES="$(cat <<JSON
 {
   "name": "block-secrets-and-binaries",
