@@ -137,6 +137,28 @@ jobs:
           echo "--- 7. preview ---"
           pulumi preview --stack "$STACK" --non-interactive 2>&1 | tail -20 || echo "   PREVIEW FAILED"
 
+      - name: Can Pulumi resolve the gcpkms secrets provider?
+        working-directory: infra/rulesets
+        run: |
+          set -o pipefail
+          # The preview failed at "get stack secrets manager", which is the step
+          # that INSTANTIATES the provider declared in the checkpoint. Reading
+          # works (export, config, select all pass); only decryption does not.
+          # A cloud secrets provider is served by a Pulumi plugin, and neither
+          # workflow installs one, so the question is whether the plugin is
+          # missing.
+
+          echo "--- plugins installed ---"
+          pulumi plugin ls || echo "   PLUGIN LS FAILED"
+
+          echo "--- can a fresh stack use gcpkms as its provider? ---"
+          # --no-select: this must not disturb the working stack's selection.
+          pulumi stack init probe-kms --secrets-provider="$PULUMI_KMS_KEY" --no-select 2>&1 | tail -5 \
+            || echo "   INIT-WITH-KMS FAILED"
+
+          echo "--- clean up the probe ---"
+          pulumi stack rm probe-kms --yes 2>&1 | tail -3 || echo "   PROBE RM FAILED"
+
       - name: Verdict
         if: always()
         run: |
