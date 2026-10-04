@@ -157,12 +157,20 @@ jobs:
           # creates nothing to remove, and sweeping unconditionally would leave
           # an orphan stack behind on exactly the run that is meant to prove the
           # provider does not work.
-          if pulumi stack init probe-kms --secrets-provider="$PULUMI_KMS_KEY" --no-select 2>&1 | tail -5; then
+          # The exit code is read from pulumi itself, never from the pipeline.
+          # `cmd | tail` reports TAIL's status, so `if cmd | tail` would take
+          # the success branch on a failed init and sweep a stack that was never
+          # created. The step's `set -o pipefail` would also cover it, but that
+          # makes this line's correctness depend on a line above it.
+          probe_out=$(pulumi stack init probe-kms --secrets-provider="$PULUMI_KMS_KEY" --no-select 2>&1)
+          probe_rc=$?
+          echo "$probe_out" | tail -5
+          if [ "$probe_rc" -eq 0 ]; then
             echo "   INIT WITH GCPKMS SUCCEEDED"
             echo "--- clean up the probe ---"
             pulumi stack rm probe-kms --yes 2>&1 | tail -3 || echo "   PROBE RM FAILED"
           else
-            echo "   INIT WITH GCPKMS FAILED — nothing was created, nothing to remove"
+            echo "   INIT WITH GCPKMS FAILED (rc=$probe_rc) — nothing was created, nothing to remove"
           fi
 
       - name: Verdict
