@@ -119,19 +119,57 @@ jobs:
           # repoint drift-scan, health-check and renovate at a different app,
           # since all three read that same variable.
           APP_ID: ${{ vars.RULESETS_APP_ID }}
+          APP_INSTALLATION_ID: ${{ vars.RULESETS_APP_INSTALLATION_ID }}
           APP_PRIVATE_KEY: ${{ secrets.RULESETS_APP_PRIVATE_KEY }}
           ORG_OWNER: ${{ github.repository_owner }}
         run: |
-          # Set via env, never interpolated into the command string: a crafted
-          # secret value must not be able to inject shell commands.
-          pulumi config set github:appAuth.id "$APP_ID" --secret
+          # --path on every appAuth key, and only on those. Without it, `pulumi
+          # config set github:appAuth.id` creates a FLAT key named "appAuth.id",
+          # not an object `appAuth` with an `id` field. The provider's schema
+          # declares appAuth as a `$ref` to type github:config/appAuth:appAuth
+          # with required [id, installationId, pemFile], so a flat key is
+          # rejected: "`github:appAuth.id` is not a valid configuration key for
+          # the github provider". Pulumi's own help states the mechanism:
+          #   pulumi config set --path parent.nested value
+          #     "will set the value of `parent` to a map `nested: value`".
+          #
+          # installationId is required by that type and was missing entirely —
+          # an App that is not installed on the org has no installation and no
+          # rights over its rulesets.
+          #
+          # github:owner and github:organization are FLAT strings in the schema,
+          # so they take no --path. Course is set by the dots: --path builds a
+          # nested object only when the key contains one, as the appAuth keys
+          # above do.
+          #
+          # A missing repo variable expands to the empty string, and
+          # `pulumi config set` validates nothing against the provider schema —
+          # it would store "" happily and the provider would reject it later,
+          # during preview, with an error naming neither the variable nor the
+          # step. Fail here instead, where the message can say which one.
+          : "${APP_ID:?RULESETS_APP_ID repository variable is not set}"
+          : "${APP_INSTALLATION_ID:?RULESETS_APP_INSTALLATION_ID repository variable is not set}"
+          : "${APP_PRIVATE_KEY:?RULESETS_APP_PRIVATE_KEY secret is not set}"
+
+          # Flat keys written by the runs that predate --path are inert but not
+          # harmless: the provider's schema validation rejects them, and a
+          # nested write does not remove them. Rm tolerates absence, and the
+          # || true keeps an absent key from failing the step.
+          pulumi config rm github:appAuth.id >/dev/null 2>&1 || true
+          pulumi config rm github:appAuth.installationId >/dev/null 2>&1 || true
+          pulumi config rm github:appAuth.pemFile >/dev/null 2>&1 || true
+
+          # Values come from env, never interpolated into the command string: a
+          # crafted secret must not be able to inject shell commands.
+          pulumi config set --path github:appAuth.id "$APP_ID" --secret
+          pulumi config set --path github:appAuth.installationId "$APP_INSTALLATION_ID" --secret
           # The PEM is multi-line, and passing it as an ARGUMENT made Pulumi read
           # its first line ("-----BEGIN ...") as a flag: the apply died on
           # "error: bad flag syntax". Pulumi's own --help names the supported
           # path: "Multi-line values may be set by piping a file to standard in",
           # with --raw to keep the trailing newline. printf is a bash builtin
           # (no argv exposure); the value still comes from the environment.
-          printf '%s' "$APP_PRIVATE_KEY" | pulumi config set github:appAuth.pemFile --secret --raw
+          printf '%s' "$APP_PRIVATE_KEY" | pulumi config set --path github:appAuth.pemFile --secret --raw
           pulumi config set github:owner "$ORG_OWNER"
 
       - name: Preview
