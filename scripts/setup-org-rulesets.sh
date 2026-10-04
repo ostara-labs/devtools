@@ -153,10 +153,10 @@ BLOCK_SECRETS_AND_BINARIES="$(cat <<JSON
       "type": "file_path_restriction",
       "parameters": {
         "restricted_file_paths": [
-          ".env",
-          "*.pem",
-          "*.key",
-          "credentials*",
+          "**/.env",
+          "**/*.pem",
+          "**/*.key",
+          "**/credentials*",
           "**/secrets/**"
         ]
       }

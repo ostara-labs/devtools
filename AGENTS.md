@@ -39,8 +39,10 @@ area, and before making a claim about it.
 | `.github/workflows/health-check.yml` | `docs/health-check.md` | The four states (BROKEN / ACTION / INFO / GAP) and why an absence is not a failure |
 | `.github/workflows/renovate.yml` | `docs/dependency-updates.md` | The three update layers, and why `.devtools` and the `uses:` refs move together |
 | `default.json` | `docs/dependency-updates.md` | What may automerge and what may not |
-| `infra/rulesets/**` | `docs/infrastructure-state.md` | Where the state lives, why it is separate from the bot project, and that `infra/rulesets/index.ts` and `scripts/setup-org-rulesets.sh` must declare the same thing |
-| `scripts/setup-org-rulesets.sh` | `docs/infrastructure-state.md` | The same rule, seen from the other file |
+| `infra/rulesets-tf/**` | `docs/infrastructure-state.md` | Where the state lives, that it is unencrypted on purpose, and that a plan reporting `No changes` is how the three declarations are checked against each other |
+| `infra/rulesets/**` | `docs/infrastructure-state.md` | Why this program has never applied (upstream Pulumi bug), and that its `--path` requirements differ from what its own header documents |
+| `scripts/setup-org-rulesets.sh` | `docs/infrastructure-state.md` | The same policy, seen from the file that is actually authoritative |
+| `.github/workflows/apply-org-rulesets.yml` | `docs/infrastructure-state.md` | How the App installation token replaces an `admin:org` PAT, and why the script needed a trigger at all |
 | `docs/**` | `README.md` | Which documents are indexed and how they are linked |
 
 ### Verifying before claiming
@@ -84,9 +86,10 @@ ones already hit rather than leaving them to be rediscovered.
 - `hooks/` — `pre-commit`, `pre-push`, `commit-msg`
 - `makefiles/` — `Makefile.common`, `.rust`, `.elixir`, `.typescript`, `.python`
 - `configs/` — shared lint configs (see table)
-- `.github/workflows/` — `ci.yml` (aggregate), `ai-review.yml`, `pr-pipeline.yml`, `docs-drift.yml`, `drift-scan.yml`, `health-check.yml`, `renovate.yml`, `release.yml`, `security.yml`, `trust-boundary-protect.yml`, `deploy-rulesets.yml`, per-stack `*-ci.yml` (`rust`, `elixir`, `typescript`, `python`)
+- `.github/workflows/` — `ci.yml` (aggregate), `ai-review.yml`, `pr-pipeline.yml`, `docs-drift.yml`, `drift-scan.yml`, `health-check.yml`, `renovate.yml`, `release.yml`, `security.yml`, `trust-boundary-protect.yml`, `deploy-rulesets.yml`, `apply-org-rulesets.yml`, `terraform-rulesets.yml`, per-stack `*-ci.yml` (`rust`, `elixir`, `typescript`, `python`)
 - `.github/actions/` — composite actions: `org-gate`, `merge-gate-verdict`, `automerge-dispatch`
-- `infra/rulesets/` — org ruleset definitions (Pulumi)
+- `infra/rulesets-tf/` — org ruleset definitions in Terraform, with state (the working one)
+- `infra/rulesets/` — org ruleset definitions in Pulumi, which has never applied
 - `scripts/` — `install.sh`, `install.ps1`, `check-docs-drift.py`, `setup-org-rulesets.sh`, `sync-repo-secrets.sh`
 - `docs/` — `TOOLCHAIN.md`, `ai-review.md`, `codeowners-trust-boundary.md`, `dependency-updates.md`, `health-check.md`, `infrastructure-state.md`, `setup-guide.md`
 - `default.json` — org Renovate preset

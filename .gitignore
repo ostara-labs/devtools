@@ -18,6 +18,18 @@ Desktop.ini
 pulumi-state/
 *.pulumi.yaml.bak
 
+# Terraform state (should never be committed)
+# The state lives in the GCS backend (infra/rulesets-tf/main.tf), so a local
+# copy is either a leftover from a local run or a mistake.
+# .terraform.lock.hcl is deliberately NOT ignored: committing it pins the
+# provider versions the plan was validated against, which is the whole point of
+# the lock file for a program that decides org-wide policy.
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+
 # Node (if any tooling scripts are added later)
 node_modules/
 dist/
