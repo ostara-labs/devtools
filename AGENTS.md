@@ -25,7 +25,7 @@ area, and before making a claim about it.
 |---|---|
 | This file | Repo structure, consumption model, CI contract, trust boundary |
 | `docs/ai-review.md` | How a PR is reviewed and what blocks a merge |
-| `docs/setup-guide.md` | The one-time setup: repo publication, GitHub App, Pulumi backend, ruleset deployment |
+| `docs/setup-guide.md` | The one-time setup: repo publication, GitHub App, and the ruleset deployment |
 
 ### By area
 
@@ -39,8 +39,7 @@ area, and before making a claim about it.
 | `.github/workflows/health-check.yml` | `docs/health-check.md` | The four states (BROKEN / ACTION / INFO / GAP) and why an absence is not a failure |
 | `.github/workflows/renovate.yml` | `docs/dependency-updates.md` | The three update layers, and why `.devtools` and the `uses:` refs move together |
 | `default.json` | `docs/dependency-updates.md` | What may automerge and what may not |
-| `infra/rulesets-tf/**` | `docs/infrastructure-state.md` | Where the state lives, that it is unencrypted on purpose, and that a plan reporting `No changes` is how the three declarations are checked against each other |
-| `infra/rulesets/**` | `docs/infrastructure-state.md` | Why this program has never applied (upstream Pulumi bug), and that its `--path` requirements differ from what its own header documents |
+| `infra/rulesets-tf/**` | `docs/infrastructure-state.md` | Where the state lives, that it is unencrypted on purpose, and that a plan reporting `No changes` is how the two declarations are checked against each other |
 | `scripts/setup-org-rulesets.sh` | `docs/infrastructure-state.md` | The same policy, seen from the file that is actually authoritative |
 | `.github/workflows/apply-org-rulesets.yml` | `docs/infrastructure-state.md` | How the App installation token replaces an `admin:org` PAT, and why the script needed a trigger at all |
 | `docs/**` | `README.md` | Which documents are indexed and how they are linked |
@@ -48,8 +47,9 @@ area, and before making a claim about it.
 ### Verifying before claiming
 
 Most of what this repository touches is defined by an external tool — `gh`,
-`pulumi`, `gcloud`, GitHub's ruleset API, Renovate's configuration schema. A
-plausible-sounding option is not evidence that it exists.
+`gcloud`, GitHub's ruleset API, the Terraform GitHub provider, Renovate's
+configuration schema. A plausible-sounding option is not evidence that it
+exists.
 
 Before reporting that an option is wrong, name the source you checked: the
 tool's `--help`, the provider's schema, the API documentation. If the claim
@@ -59,16 +59,18 @@ Past changes here were reverted because a field was assumed
 (`github:appAuth.pem` does not exist), a value was assumed to be available on
 this org's plan (`enforcement: evaluate` is Enterprise-only), and a flag was
 assumed to be safe (`--detailed-exitcode` turns ordinary changes into a
-non-zero exit the pipeline would have to reinterpret).
+non-zero exit the pipeline would have to reinterpret). The same trap catches
+values whose unit or format is guessed: `max_file_size` is in megabytes, and
+file extensions are written with a glob (`*.exe`), not as a bare suffix.
 
 ### When the check fails
 
 `ci / core` runs `actionlint` over every workflow, `shellcheck` over every
 shell script, and `gitleaks`. Those catch syntax and secrets, not semantics: a
-`gh` invocation can be valid YAML and impossible to run, and a `Pulumi.yaml`
-can parse until Pulumi actually reads it. Some failures only appear on the
-first real execution, which is why `docs/infrastructure-state.md` records the
-ones already hit rather than leaving them to be rediscovered.
+`gh` invocation can be valid YAML and impossible to run, and a Terraform plan
+can parse until the provider actually reads it. Some failures only appear on
+the first real execution, which is why `docs/infrastructure-state.md` records
+the ones already hit rather than leaving them to be rediscovered.
 
 ## What this repo provides
 
@@ -86,10 +88,9 @@ ones already hit rather than leaving them to be rediscovered.
 - `hooks/` — `pre-commit`, `pre-push`, `commit-msg`
 - `makefiles/` — `Makefile.common`, `.rust`, `.elixir`, `.typescript`, `.python`
 - `configs/` — shared lint configs (see table)
-- `.github/workflows/` — `ci.yml` (aggregate), `ai-review.yml`, `pr-pipeline.yml`, `docs-drift.yml`, `drift-scan.yml`, `health-check.yml`, `renovate.yml`, `release.yml`, `security.yml`, `trust-boundary-protect.yml`, `deploy-rulesets.yml`, `apply-org-rulesets.yml`, `terraform-rulesets.yml`, per-stack `*-ci.yml` (`rust`, `elixir`, `typescript`, `python`)
+- `.github/workflows/` — `ci.yml` (aggregate), `ai-review.yml`, `pr-pipeline.yml`, `docs-drift.yml`, `drift-scan.yml`, `health-check.yml`, `renovate.yml`, `release.yml`, `security.yml`, `trust-boundary-protect.yml`, `apply-org-rulesets.yml`, `terraform-rulesets.yml`, per-stack `*-ci.yml` (`rust`, `elixir`, `typescript`, `python`)
 - `.github/actions/` — composite actions: `org-gate`, `merge-gate-verdict`, `automerge-dispatch`
-- `infra/rulesets-tf/` — org ruleset definitions in Terraform, with state (the working one)
-- `infra/rulesets/` — org ruleset definitions in Pulumi, which has never applied
+- `infra/rulesets-tf/` — org ruleset definitions in Terraform, with state
 - `scripts/` — `install.sh`, `install.ps1`, `check-docs-drift.py`, `setup-org-rulesets.sh`, `sync-repo-secrets.sh`
 - `docs/` — `TOOLCHAIN.md`, `ai-review.md`, `codeowners-trust-boundary.md`, `dependency-updates.md`, `health-check.md`, `infrastructure-state.md`, `setup-guide.md`
 - `default.json` — org Renovate preset

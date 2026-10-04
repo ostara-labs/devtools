@@ -7,9 +7,8 @@ before either tool can run.
 
 The org rulesets — server-side branch, push and merge-queue enforcement applied
 across every `ostara-labs` repository. Nothing here touches a GCP resource: the
-providers are `@pulumi/github` and `integrations/github`, and the only
-credential involved is a GitHub App with `Organization → Administration:
-read and write`.
+provider is `integrations/github`, and the only credential involved is a GitHub
+App with `Organization → Administration: read and write`.
 
 ## Two tools apply the same policy
 
@@ -27,12 +26,13 @@ the live org reports `No changes`,** which is the mechanical proof that both
 declare the same policy — the rule carried since the #86 divergence, now
 checked by a tool instead of by reading two files.
 
-### Why the Pulumi program is not in that table
+### Why there is no Pulumi program
 
-`infra/rulesets/` still exists and **has never applied once**. Its credentials
-lived in the stack config as `--secret` values, which puts an encrypted blob in
-the state and requires a KMS at every decrypt. On a GCS backend with a `gcpkms`
-secrets provider that combination is broken upstream:
+`infra/rulesets/` held one and **it was removed on 2026-10-04**, after never
+applying once — ten runs, ten failures. Its credentials lived in the stack
+config as `--secret` values, which puts an encrypted blob in the state and
+requires a KMS at every decrypt. On a GCS backend with a `gcpkms` secrets
+provider that combination is broken upstream:
 
 - **[pulumi/pulumi#11591](https://github.com/pulumi/pulumi/issues/11591)** —
   *"remote gcp bucket and gcp kms for state"*, the exact setup here. Open since
@@ -44,7 +44,9 @@ secrets provider that combination is broken upstream:
 Everything measurable was ruled out before concluding this: state corruption,
 creation environment, credentials, permissions, key version, and the CLI
 version — pinning to the version that works locally reproduced the failure
-exactly. The failure is tracked in [#101](https://github.com/ostara-labs/devtools/issues/101).
+exactly. The failure is tracked in [#101](https://github.com/ostara-labs/devtools/issues/101),
+and the whole episode is why the rule below is "check with a plan" rather than
+"read both files carefully".
 
 **The Terraform program has no such dependency.** The `github` provider reads
 its App credentials from the **environment** (`GITHUB_APP_ID`,
@@ -216,13 +218,12 @@ gcloud kms keys create pulumi-stack-encryption --keyring=pulumi --location=europ
 A Workload Identity Federation pool lets CI authenticate without a key, the
 same pattern the bot project uses for `infra-deploy.yml`.
 
-## The three files that declare the same policy
+## The two files that declare the same policy
 
-**Change one, change the others — and check with a plan.**
+**Change one, change the other — and check with a plan.**
 
 - `scripts/setup-org-rulesets.sh` — applies it, and created the live rulesets
 - `infra/rulesets-tf/main.tf` — declares it with a state, and detects hand-edits
-- `infra/rulesets/index.ts` — the Pulumi program, which has never applied
 
 They disagreed for weeks without anyone noticing, because nothing compared
 them: the Pulumi file declared a ruleset named `core-branch-protection` that
@@ -235,7 +236,7 @@ live one.
 Actions → Terraform Rulesets → Run workflow
 ```
 
-A plan that reports `No changes` means all three agree. Anything else is drift.
+A plan that reports `No changes` means the two agree. Anything else is drift.
 
 ## Verifying a Terraform change locally
 
@@ -249,16 +250,14 @@ terraform validate
 `-backend=false` skips the GCS backend, so this needs no credentials. A real
 `plan` requires the App key, which is a repository secret — that runs in CI.
 
-## Verifying a Pulumi change locally
+## Verifying a shell change locally
 
-Only useful if the Pulumi program is ever revived; it cannot apply today.
+The script needs a token that can read the org's rulesets, which a developer
+token only has with `admin:org`. To check it without applying anything:
 
 ```bash
-cd infra/rulesets
-npm install
-node node_modules/typescript/bin/tsc --noEmit --skipLibCheck \
-  --target es2020 --moduleResolution node --module commonjs index.ts
+bash -n scripts/setup-org-rulesets.sh          # syntax
 ```
 
-Delete `package-lock.json` before committing if the install created one —
-`.gitignore` covers `node_modules/` but not the lockfile.
+The workflow is the only place the real token exists, and it prints the live
+rulesets at the end of every run.

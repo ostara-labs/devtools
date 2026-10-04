@@ -1,10 +1,11 @@
 # Setup Guide — devtools repo + org rulesets deployment
 
 > Step-by-step guide to publish the devtools repo, create the GitHub App,
-> deploy the org rulesets via Pulumi, and connect the bot repo.
+> apply the org rulesets, and connect the bot repo.
 >
 > **Audience**: ostara-labs maintainers (human, one-time setup).
-> **Prerequisites**: Windows or Linux machine with git, GitHub CLI, Pulumi installed.
+> **Prerequisites**: Windows or Linux machine with git and the GitHub CLI. Nothing
+> else — the rulesets apply through a workflow, and Terraform runs in CI.
 
 ---
 
@@ -16,9 +17,9 @@ architecture operational:
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │  1. Publish devtools repo to GitHub                         │
-│  2. Create GitHub App (ostara-labs-pulumi)                  │
-│  3. Configure Pulumi with App credentials                   │
-│  4. Deploy org rulesets (server-side enforcement)           │
+│  2. Create GitHub App (devtools-rulesets)                   │
+│  3. Configure the repository settings (App + GCP)           │
+│  4. Apply org rulesets (server-side enforcement)            │
 │  5. Connect bot repo (submodule + hooks + CI workflow)      │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -41,21 +42,21 @@ Install the tools below if not already present:
 ```powershell
 # Windows (winget)
 winget install GitHub.cli
-winget install Pulumi.Pulumi
 
 # Verify
 gh --version
-pulumi version
 ```
 
 ```bash
 # Linux/Mac (brew)
-brew install gh pulumi
+brew install gh
 
 # Verify
 gh --version
-pulumi version
 ```
+
+Terraform is not needed locally either: `terraform-rulesets.yml` runs it in CI,
+and its state lives in GCS.
 
 Authenticate with GitHub CLI:
 
@@ -154,138 +155,116 @@ Write down both numbers — you need them in Step 3.
 
 ---
 
-## Step 3 — Configure Pulumi
+## Step 3 — Configure the repository settings
 
-> The backend, the bucket and the GCP project they need are described in
-> [`infrastructure-state.md`](infrastructure-state.md). The bucket does **not**
-> exist yet — there is no GCP organization on this account, so the project has
-> to be created first. That document has the commands.
+The rulesets apply themselves once four settings exist on the repository. Two
+are for the GitHub App, and two are for the GCP authentication the Terraform
+job needs.
 
-### 3.1 — Install npm dependencies
+### 3.1 — The App settings
 
-```powershell
-cd C:\Users\Robert\repositories\devtools\infra\rulesets
-npm install
-```
-
-### 3.2 — Log in to Pulumi backend
-
-If you use Pulumi Cloud:
-```powershell
-pulumi login
-```
-
-If you use GCS backend (recommended for ostara-labs):
-```powershell
-pulumi login gs://ostara-labs-rulesets-state
-```
-
-### 3.3 — Create the stack
+From the App ID and Installation ID collected in Step 2.4:
 
 ```powershell
-pulumi stack init ostara-labs/devtools-rulesets
+gh variable set RULESETS_APP_ID --repo ostara-labs/devtools --body "5175699"
+gh variable set RULESETS_APP_INSTALLATION_ID --repo ostara-labs/devtools --body "167892034"
 ```
 
-### 3.4 — Set the GitHub App credentials as secrets
+**Variables, not secrets.** An identifier is not a credential, and putting it
+in a secret hides it from the run log — which is where a missing or wrong value
+would otherwise be visible.
 
-Replace the placeholder values with your actual numbers and PEM file path:
+The private key is a secret:
 
 ```powershell
-# App ID (from Step 2.4)
-pulumi config set github:appAuth.id 123456 --secret
-
-# Installation ID (from Step 2.4)
-pulumi config set github:appAuth.installationId 78910 --secret
-
-# Private key PEM content
-pulumi config set github:appAuth.pemFile "$(Get-Content ostara-labs-pulumi.private-key.pem -Raw)" --secret
-
-# Org owner (mandatory with appAuth)
-pulumi config set github:owner ostara-labs
+gh secret set RULESETS_APP_PRIVATE_KEY --repo ostara-labs/devtools --body (Get-Content .\devtools-rulesets.*.private-key.pem -Raw)
 ```
 
-On Linux/Mac:
-```bash
-pulumi config set github:appAuth.pemFile "$(cat ostara-labs-pulumi.private-key.pem)" --secret
-```
+### 3.2 — The GCP settings
 
-> All three values are stored encrypted in Pulumi state via `--secret`.
-> They never appear in plaintext in the code or in `pulumi config` output.
-
-### 3.5 — Verify the configuration
+Only needed if the Terraform plan is to run. The Workload Identity provider and
+the service account are created in Step 0 of
+[`infrastructure-state.md`](infrastructure-state.md):
 
 ```powershell
-# Should show the keys (but NOT the secret values)
-pulumi config
-
-# Expected output:
-# github:appAuth.id               [secret]
-# github:appAuth.installationId   [secret]
-# github:appAuth.pemFile          [secret]
-# github:owner                    ostara-labs
+gh secret set GCP_SERVICE_ACCOUNT_EMAIL --repo ostara-labs/devtools --body "github-actions-deployer@ostara-labs-infra.iam.gserviceaccount.com"
+gh secret set GCP_WORKLOAD_IDENTITY_PROVIDER --repo ostara-labs/devtools --body "projects/418359433373/locations/global/workloadIdentityPools/github-actions/providers/github"
 ```
+
+**Secrets, unlike the two App identifiers above.** The distinction is not about
+sensitivity — a Workload Identity provider resource name is public — but about
+what the workflows read: they consume these through `${{ secrets.… }}`. Setting
+them as variables leaves the reference empty, and an empty `service_account`
+fails at authentication with a message that names neither.
+
+### 3.3 — Verify
+
+```powershell
+gh variable list --repo ostara-labs/devtools
+gh secret list --repo ostara-labs/devtools
+```
+
+The two `RULESETS_*` identifiers appear as variables; `RULESETS_APP_PRIVATE_KEY`
+and the two `GCP_*` values appear as secrets with a name and a date, never a
+value.
+
+This is the check that catches a wrong kind: the workflow reads exactly one of
+the two stores for each name, and the other returns empty rather than erroring.
 
 ---
 
-## Step 4 — Deploy the org rulesets
+## Step 4 — Apply the org rulesets
 
-### 4.1 — Preview
-
-```powershell
-pulumi preview
-```
-
-This shows what Pulumi will create without making changes. You should see:
-- resources to create: `main-protection`, `required-ci-checks`,
-  `block-secrets-and-binaries`, and one `merge-queue` per repository in the list
-- No resources to delete or replace
-
-Review the plan. If it looks correct, proceed.
-
-### 4.2 — Deploy
-
-Locally, once (the first time a stack is created):
+**Nothing to run by hand.** `apply-org-rulesets.yml` fires on any push to
+`main` that changes `scripts/setup-org-rulesets.sh` or `infra/rulesets-tf/**`,
+and on manual dispatch. It mints a short-lived App installation token, runs the
+script, and prints the live rulesets at the end of the run.
 
 ```powershell
-pulumi up
+# To apply without a change to those files:
+gh workflow run apply-org-rulesets.yml --repo ostara-labs/devtools --ref main
 ```
 
-Afterwards the repo deploys itself: `.github/workflows/deploy-rulesets.yml`
-runs on every push to `main` that touches `infra/rulesets/**`, and on manual
-dispatch. It runs `pulumi preview` before `pulumi up`, so the plan of each
-deploy is in the run log. A manual `pulumi up` against the same stack is still
-fine, but prefer the workflow: it uses the same secrets for everyone and
-leaves a trace of what was applied.
+> **Why a script and not Pulumi.** `infra/rulesets/` used to hold a Pulumi
+> program that declared the same rulesets. It never applied once — ten runs,
+> ten failures — because its credentials sat in the stack state as `--secret`
+> values, which needs a KMS at every decrypt, and that combination is broken
+> upstream (pulumi/pulumi#11591, open since 2022-12-08, unassigned). The
+> program was removed on 2026-10-04; the failure is recorded in
+> [devtools#101](https://github.com/ostara-labs/devtools/issues/101).
 
-Pulumi asks for confirmation. Type `yes` to deploy.
+### 4.1 — See what would change first
 
-Expected result:
+The script converges, but it cannot show a plan. Terraform can:
+
+```powershell
+gh workflow run terraform-rulesets.yml --repo ostara-labs/devtools --ref main
 ```
-Resources:
-    + N created
 
-Duration: 15s
-```
+It plans and stops. `No changes. Your infrastructure matches the configuration.`
+means the two declarations agree — the check that replaced comparing two files
+by hand.
 
-### 4.3 — Verify on GitHub
+To make Terraform the applier instead, dispatch the same workflow with
+`apply=true`. It does not do so by default: the script stays authoritative
+until Terraform has applied in production at least once.
 
-1. Go to: https://github.com/organizations/ostara-labs/settings/rules
-2. You should see these rulesets:
+### 4.2 — Verify on GitHub
+
+1. Go to https://github.com/organizations/ostara-labs/settings/rules
+2. You should see:
    - `main-protection` (branch, all repos)
    - `required-ci-checks` (branch, all repos)
-   - `block-secrets-and-binaries` (push, all repos) — **only after this
-     program has been applied**; it has never existed, so until then no
-     server-side secret blocking is active
+   - `block-secrets-and-binaries` (push, all repos)
    - `merge-queue` (branch) on `devtools` and `repo-template`
    - `trust-boundary-human-review` on `devtools`
    - `trust-boundary-codeowner-review` on `bot`
 
-   The live rulesets were created by `scripts/setup-org-rulesets.sh`, not by
-   this program, which is why `main-protection` and `required-ci-checks` match
-   the script's shape. That script and `infra/rulesets/index.ts` must declare
-   the same thing; check both before changing either.
+The App token can read this list; a user token needs `admin:org`:
 
-3. Click each one to verify the rules match the code in `index.ts`.
+```powershell
+gh api /orgs/ostara-labs/rulesets --jq '.[] | .name + "  " + .target + "  " + .enforcement'
+```
 
 ### 4.4 — Test the rulesets
 
@@ -422,34 +401,31 @@ After completing all steps, verify:
 
 ## Troubleshooting
 
-### `pulumi preview` fails with `403 Resource not accessible by integration`
+### The apply fails with `Resource not accessible by integration`
 
-The GitHub App does not have the right permissions, or the `owner` config is
-missing.
+The App is missing the permission, or is not installed on the organisation.
+A token minted from an App that was never installed has no rights and no
+installation id.
 
-Fix:
-```powershell
-# Verify owner is set
-pulumi config get github:owner
-# Should print: ostara-labs
+1. Go to https://github.com/organizations/ostara-labs/settings/installations
+   and confirm the App is listed. If it is not, install it — creating an App
+   does not install it, and this was missed for a day.
+2. On the app settings → **Organization permissions**, verify
+   **Administration** is **Read and write**.
+3. Confirm both settings exist, not just the secret:
+   ```powershell
+   gh variable list --repo ostara-labs/devtools | Select-String RULESETS
+   ```
+   `RULESETS_APP_INSTALLATION_ID` missing is the usual cause; a missing repo
+   variable expands to the empty string, which is stored without complaint and
+   only fails later with a message that names nothing.
 
-# If empty:
-pulumi config set github:owner ostara-labs
-```
+### The apply fails with `cannot list rulesets on ostara-labs`
 
-If owner is correct, check the app's org permissions:
-1. Go to the app settings → Organization permissions
-2. Verify **Administration** is set to **Read and write**
-
-### `pulumi config set github:appAuth.pemFile` fails on Windows
-
-The PEM file content may have encoding issues. Try:
-
-```powershell
-# Read with explicit UTF-8
-$content = [System.IO.File]::ReadAllText("ostara-labs-pulumi.private-key.pem", [System.Text.Encoding]::UTF8)
-pulumi config set github:appAuth.pemFile $content --secret
-```
+The token cannot read the org's rulesets. Either the App lost its
+`Administration` permission, or a user token is being used without
+`admin:org`. The script reports this explicitly rather than falling through to
+a confusing `409 Conflict` on the create path.
 
 ### Git hooks not running after submodule setup
 
@@ -494,13 +470,19 @@ cargo nextest run
 
 The private key does not expire, but if it is compromised:
 
-1. Go to the app settings → Private keys → **Generate a private key** (this
-   invalidates the old key)
-2. Update Pulumi config:
+1. Go to the app settings → Private keys → **Generate a private key**
+2. Replace the repository secret:
    ```powershell
-   pulumi config set github:appAuth.pemFile "$(Get-Content new-key.pem -Raw)" --secret
+   gh secret set RULESETS_APP_PRIVATE_KEY --repo ostara-labs/devtools --body (Get-Content .\new-key.private-key.pem -Raw)
    ```
-3. Run `pulumi up` to verify the new key works
+3. **Verify before deleting the old key.** Dispatch the apply and read its end:
+   ```powershell
+   gh workflow run apply-org-rulesets.yml --repo ostara-labs/devtools --ref main
+   ```
+   A passing run means the new key works.
+4. Only then delete the old key in the App settings.
+
+The order matters: deleting first leaves no way back if the new key is wrong.
 
 ### Adding a new repo to the org
 
