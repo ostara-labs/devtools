@@ -123,8 +123,8 @@ jobs:
           APP_PRIVATE_KEY: ${{ secrets.RULESETS_APP_PRIVATE_KEY }}
           ORG_OWNER: ${{ github.repository_owner }}
         run: |
-          # --path on every appAuth key. Without it, `pulumi config set
-          # github:appAuth.id` creates a FLAT key literally named "appAuth.id",
+          # --path on every appAuth key, and only on those. Without it, `pulumi
+          # config set github:appAuth.id` creates a FLAT key named "appAuth.id",
           # not an object `appAuth` with an `id` field. The provider's schema
           # declares appAuth as a `$ref` to type github:config/appAuth:appAuth
           # with required [id, installationId, pemFile], so a flat key is
@@ -137,6 +137,11 @@ jobs:
           # an App that is not installed on the org has no installation and no
           # rights over its rulesets.
           #
+          # github:owner and github:organization are FLAT strings in the schema,
+          # so they take no --path. Course is set by the dots: --path builds a
+          # nested object only when the key contains one, as the appAuth keys
+          # above do.
+          #
           # Values come from env, never interpolated into the command string: a
           # crafted secret must not be able to inject shell commands.
           pulumi config set --path github:appAuth.id "$APP_ID" --secret
@@ -148,7 +153,7 @@ jobs:
           # with --raw to keep the trailing newline. printf is a bash builtin
           # (no argv exposure); the value still comes from the environment.
           printf '%s' "$APP_PRIVATE_KEY" | pulumi config set --path github:appAuth.pemFile --secret --raw
-          pulumi config set --path github:owner "$ORG_OWNER"
+          pulumi config set github:owner "$ORG_OWNER"
 
       - name: Preview
         working-directory: infra/rulesets
