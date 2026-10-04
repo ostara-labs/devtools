@@ -42,7 +42,20 @@ ORG="${1:?usage: bash scripts/setup-org-rulesets.sh <org>}"
 apply_org_ruleset() {
   local name="$1" payload="$2" existing_id
 
-  existing_id="$(gh api "/orgs/$ORG/rulesets" --jq ".[] | select(.name == \"$name\") | .id" || true)"
+  # The listing must fail LOUDLY. Swallowing its error would leave existing_id
+  # empty, send the script down the create path, and surface a 409 Conflict
+  # from POST — an error about a duplicate, when the real problem was that the
+  # listing never ran (missing admin:org, expired token, no network). The
+  # distinction between "no ruleset by that name" and "could not find out" is
+  # the whole point of this guard.
+  if ! listing="$(gh api "/orgs/$ORG/rulesets" --jq ".[] | select(.name == \"$name\") | .id")"; then
+    echo "[org-rulesets] ERROR: cannot list rulesets on $ORG" >&2
+    echo "[org-rulesets]   check that GH_TOKEN carries the Administration:write" >&2
+    echo "[org-rulesets]   organization permission, or admin:org for a user token" >&2
+    return 1
+  fi
+  existing_id="$listing"
+
   if [ -n "$existing_id" ]; then
     echo "[org-rulesets] $name exists (id=$existing_id) - updating"
     gh api -X PUT "/orgs/$ORG/rulesets/$existing_id" --input - <<<"$payload" >/dev/null
