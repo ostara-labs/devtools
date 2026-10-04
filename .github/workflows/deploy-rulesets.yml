@@ -125,7 +125,13 @@ jobs:
           # Set via env, never interpolated into the command string: a crafted
           # secret value must not be able to inject shell commands.
           pulumi config set github:appAuth.id "$APP_ID" --secret
-          pulumi config set github:appAuth.pemFile "$APP_PRIVATE_KEY" --secret
+          # The PEM is multi-line, and passing it as an ARGUMENT made Pulumi read
+          # its first line ("-----BEGIN ...") as a flag: the apply died on
+          # "error: bad flag syntax". Pulumi's own --help names the supported
+          # path: "Multi-line values may be set by piping a file to standard in",
+          # with --raw to keep the trailing newline. printf is a bash builtin
+          # (no argv exposure); the value still comes from the environment.
+          printf '%s' "$APP_PRIVATE_KEY" | pulumi config set github:appAuth.pemFile --secret --raw
           pulumi config set github:owner "$ORG_OWNER"
 
       - name: Preview
