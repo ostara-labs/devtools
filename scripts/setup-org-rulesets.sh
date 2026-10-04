@@ -10,13 +10,16 @@
 # created through POST. Running it twice converges, so it is safe to re-run
 # after any edit here.
 #
-# THIS SCRIPT AND infra/rulesets/index.ts MUST DECLARE THE SAME THING.
-# They did not until 2026-10-03, and the divergence was invisible for weeks:
-# the Pulumi file named its ruleset "core-branch-protection", which has never
-# existed on GitHub, so it governed nothing while this script created and
-# re-created the ruleset that is actually live ("main-protection"). The two
-# also disagreed on the approving-review count, the review-thread rule, the
-# merge methods and the required checks. Change one, change the other.
+# THIS SCRIPT AND infra/rulesets-tf/main.tf MUST DECLARE THE SAME THING.
+# Two declarations of one policy drift silently: a previous pair disagreed on
+# the approving-review count, the review-thread rule, the merge methods and the
+# required checks, and one of the two named a ruleset that had never existed on
+# GitHub, so it governed nothing. Change one, change the other, and let the
+# Terraform plan confirm they match:
+#
+#   gh workflow run terraform-rulesets.yml --repo ostara-labs/devtools --ref main
+#
+# "No changes" means they agree.
 #
 # Scope notes:
 #   - Requires admin:org (the repo-level equivalent needs no such scope,

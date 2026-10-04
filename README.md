@@ -19,10 +19,11 @@ Shared git hooks, Makefiles, ONE aggregate CI workflow, lint configs, drift-scan
 | `default.json` | Org Renovate preset: git-submodules + github-actions managers, automerge scoped to `.devtools` submodule and `ostara-labs/devtools/*` refs. | `extends ["github>ostara-labs/devtools"]` in `renovate.json` |
 | `workflows/health-check.yml` | One issue in this repo says whether the shared tooling works: closed while everything is nominal, reopened with an `@`-mention when something breaks. Reads the last run of each monitored workflow per repo, never a failure count. | Org-level scheduled workflow (daily) — see [Health check](docs/health-check.md) |
 | `workflows/renovate.yml` | Self-hosted Renovate: the org's single dependency-update engine, covering the devtools pins and the language ecosystems. | Org-level scheduled workflow (weekly) — see [Dependency updates](docs/dependency-updates.md) |
-| `workflows/deploy-rulesets.yml` | Applies `infra/rulesets/` through Pulumi: the branch, push and merge-queue rulesets that govern every repo. | Runs on push to `main` under `infra/rulesets/**` — see [Infrastructure state](docs/infrastructure-state.md) |
+| `workflows/apply-org-rulesets.yml` | Applies the branch and push rulesets that govern every repo, through `scripts/setup-org-rulesets.sh`, under a short-lived App installation token. | Push to `main` on the script or `infra/rulesets-tf/**` changing — see [Infrastructure state](docs/infrastructure-state.md) |
+| `workflows/terraform-rulesets.yml` | Plans `infra/rulesets-tf/` on every change, applies only on dispatch, so the two declarations can be compared before anything switches. State in GCS, unencrypted — the App credentials come from the environment. | Push / PR on `infra/rulesets-tf/**`, manual dispatch |
 | `workflows/pr-pipeline.yml` | The PR chain every consumer calls: `ci` → `ai-review` → `merge-gate`. `merge-gate` is what actually blocks a merge. | One-line caller per repo, same as `ci.yml` |
 | `workflows/security.yml` | Secret and vulnerability scanning at the org level. | Org-level scheduled workflow |
-| `workflows/apply-org-rulesets.yml` | Applies the org rulesets through the script, under a short-lived App installation token. Ran on the script or `infra/rulesets/**` changing. See [Infrastructure state](docs/infrastructure-state.md). | Push to `main`, manual dispatch |
+| `workflows/apply-org-rulesets.yml` | Applies the org rulesets through the script, under a short-lived App installation token. Ran on the script or `infra/rulesets-tf/**` changing. See [Infrastructure state](docs/infrastructure-state.md). | Push to `main`, manual dispatch |
 | `workflows/terraform-rulesets.yml` | Plans `infra/rulesets-tf/` on every change and applies only on dispatch, so a plan can be compared before anything switches. State in GCS, unencrypted — the App credentials come from the environment. | Push / PR on `infra/rulesets-tf/**`, manual dispatch |
 | `configs/` | Shared lint configs: clippy.toml, rustfmt.toml, biome.json, plus seeded `.gitleaks.toml` and `.coderabbit.yaml` via `install.sh` | Symlink or copy into repo root |
 | `scripts/install.sh` | Bootstrap: sets the RELATIVE hooksPath, creates the Makefile stub, seeds configs | `bash .devtools/scripts/install.sh` from submodule |
@@ -180,13 +181,17 @@ what to check when a bump does not arrive: [`docs/dependency-updates.md`](docs/d
 
 ## Infrastructure state
 
-Where this repository's Pulumi state lives, and why it is not in the bot
-project: [`docs/infrastructure-state.md`](docs/infrastructure-state.md).
+What applies the GitHub rulesets that govern every repository here, where the
+Terraform state lives, and why it is not in the bot project:
+[`docs/infrastructure-state.md`](docs/infrastructure-state.md).
 
-`infra/rulesets/` creates the GitHub rulesets that govern every repository
-here. Its state is separate from the bot project's because an object belongs
-in the state of the thing it governs — the rulesets govern the organisation,
-not one of its consumers.
+The state is separate from the bot project's because an object belongs in the
+state of the thing it governs — the rulesets govern the organisation, not one
+of its consumers.
+
+Two things apply the same policy and are checked against each other on every
+push: `scripts/setup-org-rulesets.sh`, which is authoritative, and
+`infra/rulesets-tf/`, whose plan reports `No changes` when they agree.
 
 ## Health check
 

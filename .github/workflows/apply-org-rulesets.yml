@@ -32,7 +32,7 @@ on:
     branches: [main]
     paths:
       - "scripts/setup-org-rulesets.sh"
-      - "infra/rulesets/**"
+      - "infra/rulesets-tf/**"
   workflow_dispatch:
 
 permissions:
