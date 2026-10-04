@@ -149,6 +149,7 @@ jobs:
           # step. Fail here instead, where the message can say which one.
           : "${APP_ID:?RULESETS_APP_ID repository variable is not set}"
           : "${APP_INSTALLATION_ID:?RULESETS_APP_INSTALLATION_ID repository variable is not set}"
+          : "${APP_PRIVATE_KEY:?RULESETS_APP_PRIVATE_KEY secret is not set}"
 
           # Flat keys written by the runs that predate --path are inert but not
           # harmless: the provider's schema validation rejects them, and a
