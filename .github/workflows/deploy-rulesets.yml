@@ -142,6 +142,22 @@ jobs:
           # nested object only when the key contains one, as the appAuth keys
           # above do.
           #
+          # A missing repo variable expands to the empty string, and
+          # `pulumi config set` validates nothing against the provider schema —
+          # it would store "" happily and the provider would reject it later,
+          # during preview, with an error naming neither the variable nor the
+          # step. Fail here instead, where the message can say which one.
+          : "${APP_ID:?RULESETS_APP_ID repository variable is not set}"
+          : "${APP_INSTALLATION_ID:?RULESETS_APP_INSTALLATION_ID repository variable is not set}"
+
+          # Flat keys written by the runs that predate --path are inert but not
+          # harmless: the provider's schema validation rejects them, and a
+          # nested write does not remove them. Rm tolerates absence, and the
+          # || true keeps an absent key from failing the step.
+          pulumi config rm github:appAuth.id >/dev/null 2>&1 || true
+          pulumi config rm github:appAuth.installationId >/dev/null 2>&1 || true
+          pulumi config rm github:appAuth.pemFile >/dev/null 2>&1 || true
+
           # Values come from env, never interpolated into the command string: a
           # crafted secret must not be able to inject shell commands.
           pulumi config set --path github:appAuth.id "$APP_ID" --secret
