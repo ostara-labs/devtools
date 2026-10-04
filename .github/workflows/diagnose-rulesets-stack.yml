@@ -94,8 +94,10 @@ jobs:
       - name: What the stack file declares
         run: |
           echo "=== raw checkpoint: secrets_providers block ==="
-          # Read straight from the bucket, so the answer does not depend on
-          # Pulumi being able to decrypt anything.
+          # pipefail: a failed `gcloud storage cat` would otherwise be masked by
+          # python succeeding on empty stdin, printing a traceback as if the
+          # read had worked.
+          set -o pipefail
           gcloud storage cat "${PULUMI_BACKEND#gs://}/.pulumi/stacks/${STACK}/${STACK}.json" \
             | python3 -c 'import json,sys; d=json.load(sys.stdin); print(json.dumps(d["checkpoint"]["latest"].get("secrets_providers"), indent=2))' \
             || echo "RAW READ FAILED"
@@ -103,6 +105,11 @@ jobs:
       - name: Every read-only Pulumi command, one per line
         working-directory: infra/rulesets
         run: |
+          # pipefail: without it every `cmd | head` below reports head's exit
+          # code, so a FAILED command would print its echo as if it had worked.
+          # A diagnostic that cannot tell success from failure is useless.
+          set -o pipefail
+
           # Each command is isolated: the first failure says which operation
           # needs the passphrase, which is the whole question.
           echo "--- 1. stack select ---"
@@ -114,8 +121,12 @@ jobs:
           echo "--- 3. choose a stack, no decryption expected ---"
           pulumi stack --show-name 2>&1 | head -3 || echo "   SHOW-NAME FAILED"
 
-          echo "--- 4. config --plaintext: reads config, may decrypt ---"
-          pulumi config --show-secrets 2>&1 | head -10 || echo "   CONFIG FAILED"
+          echo "--- 4. config: reads config, may decrypt ---"
+          # No --show-secrets: Pulumi's own --help says it displays secret
+          # VALUES "instead of displaying blinded values". This workflow's
+          # subject includes an App private key, and a diagnostic that leaks it
+          # into a CI log is worse than the failure it is investigating.
+          pulumi config 2>&1 | head -10 || echo "   CONFIG FAILED"
 
           echo "--- 5. whoami (no stack state at all) ---"
           pulumi whoami 2>&1 | head -3 || echo "   WHOAMI FAILED"
