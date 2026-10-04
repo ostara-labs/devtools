@@ -38,6 +38,10 @@ on:
 
 permissions:
   contents: read
+  # Required by google-github-actions/auth: the Workload Identity Federation
+  # exchange needs an OIDC token from the job, and without this the step fails
+  # with "did not inject $ACTIONS_ID_TOKEN_REQUEST_TOKEN".
+  id-token: write
 
 concurrency:
   group: terraform-rulesets
