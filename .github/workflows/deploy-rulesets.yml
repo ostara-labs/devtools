@@ -81,7 +81,14 @@ jobs:
       - name: Install Pulumi
         uses: pulumi/actions@8e5e406f4007fca908480587cb9893c07090f58d # v7
         with:
-          pulumi-version: latest
+          # Pinned, not `latest`. With the floating version the CLI could not
+          # build the gcpkms secrets manager for a stack whose state is
+          # demonstrably readable: deleting the stack, recreating it, and
+          # verifying `config set --secret` plus `config --show-secrets`
+          # against it succeeds with v3.251.0 locally, and the SAME stack then
+          # fails in CI with the very same state. The variable that differs is
+          # the client, so it is the client that gets fixed here.
+          pulumi-version: 3.251.0
 
       - name: Configure Pulumi backend
         run: pulumi login "$PULUMI_BACKEND"
