@@ -153,11 +153,17 @@ jobs:
 
           echo "--- can a fresh stack use gcpkms as its provider? ---"
           # --no-select: this must not disturb the working stack's selection.
-          pulumi stack init probe-kms --secrets-provider="$PULUMI_KMS_KEY" --no-select 2>&1 | tail -5 \
-            || echo "   INIT-WITH-KMS FAILED"
-
-          echo "--- clean up the probe ---"
-          pulumi stack rm probe-kms --yes 2>&1 | tail -3 || echo "   PROBE RM FAILED"
+          # The removal is INSIDE the success branch on purpose. A failing init
+          # creates nothing to remove, and sweeping unconditionally would leave
+          # an orphan stack behind on exactly the run that is meant to prove the
+          # provider does not work.
+          if pulumi stack init probe-kms --secrets-provider="$PULUMI_KMS_KEY" --no-select 2>&1 | tail -5; then
+            echo "   INIT WITH GCPKMS SUCCEEDED"
+            echo "--- clean up the probe ---"
+            pulumi stack rm probe-kms --yes 2>&1 | tail -3 || echo "   PROBE RM FAILED"
+          else
+            echo "   INIT WITH GCPKMS FAILED — nothing was created, nothing to remove"
+          fi
 
       - name: Verdict
         if: always()
