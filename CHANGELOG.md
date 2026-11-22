@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.15.1](https://github.com/ostara-labs/devtools/compare/v1.15.0...v1.15.1) (2026-11-22)
+
+
+### Bug Fixes
+
+* **ai-review:** bump PR-Agent to 0.50.0 ([#107](https://github.com/ostara-labs/devtools/issues/107)) ([007e1bb](https://github.com/ostara-labs/devtools/commit/007e1bb2e55706c23460b251668287b7d353701e))
+
 ## [1.15.0](https://github.com/ostara-labs/devtools/compare/v1.14.0...v1.15.0) (2026-10-04)
 
 
