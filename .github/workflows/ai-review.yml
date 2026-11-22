@@ -74,14 +74,21 @@ jobs:
           esac
 
       - name: Run PR-Agent review
-        # 0.45.0-github_action (released 2026-09-05), digest-pinned. The floating
+        # 0.50.0-github_action (released 2026-11-07), digest-pinned. The floating
         # the-pr-agent/pr-agent@main ref this replaces shipped an upstream
         # regression on 2026-09-15: LiteLLM 1.101.0 stopped forwarding the
         # request-local OpenRouter key, so every review died with a 401 while the
         # check stayed red and blocked merges org-wide. A released, immutable
         # image is what a production gate needs, and the org Renovate preset
         # (default.json) tracks the tag, so the pin cannot freeze silently.
-        uses: docker://pragent/pr-agent@sha256:548b760b81ab4b3f729182428695ccc1194bbf87528c2b1e2b2b07e5223af7b6
+        #
+        # 0.50.0 over 0.45.0: persistent_inline_comments (drops an inline thread
+        # already posted on an earlier push), max_previous_findings_chars (feeds
+        # prior findings back so they are not re-raised reworded) and the
+        # committable_code_suggestions spelling that 0.45.0 carried as
+        # commitable_. The org config in ostara-labs/pr-agent-settings is written
+        # against this version.
+        uses: docker://pragent/pr-agent@sha256:548e894a88071180832b2f4233f734d0acd0db1a879e2fcbaa70bac8b8372ebe
         env:
           GITHUB_TOKEN: ${{ github.token }}
           OPENROUTER.KEY: ${{ secrets.AI_REVIEW_OPENROUTER_API_KEY }}
